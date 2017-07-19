@@ -22,7 +22,7 @@ func (server *KmrManagerWeb) NewMasterPod(name, image string, command []string) 
 			},
 		},
 		Spec: v1.PodSpec{
-			ServiceAccountName: "kmr-web",
+			ServiceAccountName: "kmr-master",
 			RestartPolicy:      v1.RestartPolicyNever,
 			Containers: []v1.Container{
 				v1.Container{

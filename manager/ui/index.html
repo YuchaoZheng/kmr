@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>KMR</title>
+    <link rel="stylesheet" href="https://unpkg.com/element-ui/lib/theme-default/index.css">
+    <link href="https://unpkg.com/jsoneditor@5.9.2/dist/jsoneditor.min.css" rel="stylesheet" type="text/css">
+  </head>
+  <style>
+    [v-cloak] {
+      display: none !important;
+    }
+    body {
+      padding: 0 1em  ;
+      margin: 0;
+    }
+    #kmr-title {
+      vertical-align: middle;
+      line-height: 60px;
+      float: left;
+      margin: 0 2em 0 1em;
+    }
+    .jsoneditor {
+      min-height: 500px;
+    }
+    .el-menu {
+      margin-bottom: 10px;
+    }
+  </style>
+<body>
+  <div id="app" v-cloak>
+    <el-menu :default-active="$route.path" mode="horizontal" :router="true">
+      <h2 id="kmr-title">KMR</h2>
+      <el-menu-item index="/create" :route="{path: '/create'}">Create</el-menu-item>
+    </el-menu>
+    <router-view></router-view>
+  </div>
+  <script src="https://unpkg.com/vue/dist/vue.js"></script>
+  <script src="https://unpkg.com/vue-resource@1.2.0/dist/vue-resource.min.js"></script>
+  <script src="https://unpkg.com/vue-router/dist/vue-router.js"></script>
+  <script src="https://unpkg.com/element-ui/lib/index.js"></script>
+  <script src="https://cdn.bootcss.com/moment.js/2.17.1/moment.js"></script>
+  <script src="https://unpkg.com/jsoneditor@5.9.2/dist/jsoneditor.min.js"></script>
+  <script type="text/x-template" id="kmr-create-job-template">
+    <div>
+      <el-form ref="form" :model="job" label-width="80px">
+        <el-form-item label="Name">
+          <el-input v-model="job.name"></el-input>
+        </el-form-item>
+        <el-form-item label="Image">
+          <el-input v-model="job.image"></el-input>
+        </el-form-item>
+        <el-form-item label="Command">
+          <el-input v-model="job.command"></el-input>
+        </el-form-item>
+        <el-form-item label="Description">
+          <json-editor :json="job.jobDesc" :injectHandle="() => this.jsonHandle"/>
+        </el-form-item>
+      </el-form>
+      <el-button >Cancel</el-button>
+      <el-button type="primary" @click="submitJob">Confirm</el-button>
+    </div>
+  </script>
+
+  <script type="text/x-template" id="json-editor-template">
+    <div>
+      <el-switch
+        v-model="textmode"
+        on-text="Text"
+        off-text="Tree">
+      </el-switch>
+      <div ref="editor"></div>
+    </div>
+  </script>
+  <script>
+  var defaultJob = {
+    "mapBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/"
+      }
+    },
+    "interBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/tmp/"
+      }
+    },
+    "reduceBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/tmp/"
+      }
+    },
+    "workerDesc": {
+      "volumeMounts": [
+        {
+          "name": "cephfs",
+          "mountPath": "/cephfs"
+        }
+      ],
+      "volumes": [
+        {
+          "name": "cephfs",
+          "hostPath": {
+            "path": "/mnt/cephfs"
+          }
+        }
+      ]
+    },
+    "nWorker": 2,
+    "image": "kmr",
+    "command": [
+      "go",
+      "run",
+      "/go/src/github.com/naturali/kmr/examples/wordcount/main.go"
+    ],
+    "map": {
+      "readerType": "textstream",
+      "objects": [
+        "/go/src/github.com/naturali/kmr/README.md"
+      ]
+    },
+    "reduce": {
+      "nReduce": 1
+    }
+  };
+
+  var KmrCreateJob = Vue.component('kmr-create-job', {
+    template: '#kmr-create-job-template',
+    data: function(){
+      return {
+        job: {
+          name: "",
+          image: "",
+          command: "",
+          jobDesc: defaultJob
+        },
+        jsonHandle: {
+          getJson: null
+        },
+      }
+    },
+    methods: {
+      submitJob: function() {
+        var command = [];
+        var data = {
+          name: this.job.name,
+          image: this.job.image,
+          command: this.job.command.match(/"(\\.|[^"])*?"|'(\\.|[^'])*?'|\S+/g) || [],
+          jobDesc: this.jsonHandle.getJson()
+        }
+        this.$http.post('/api/v1/create', data).then(function() {
+          this.$message({
+            type: 'success',
+            message: 'Job ' + data.name + ' created!'
+          })
+        }).catch(function(response) {
+          this.$message.error(response.body)
+          console.error(response.body)
+        });
+      }
+    },
+    mounted: function(){
+    }
+  });
+
+  var JsonEditor = Vue.component('json-editor', {
+    template: '#json-editor-template',
+    props: {
+      json: {
+        type: Object,
+        default: {}
+      },
+      injectHandle: {
+        type: Function,
+        default: null
+      }
+    },
+    data: function(){
+      return {
+        editor: null,
+        textmode: false
+      }
+    },
+    methods: {
+    },
+    beforeMount: function() {
+
+    },
+    mounted: function(){
+      var options = {
+        onChange: this.onJsonChange
+      };
+      var editor = new JSONEditor(this.$refs.editor, options, this.$props.json);
+      this.editor = editor;
+      this.$watch("textmode", function(newval, oldval) {
+        if (newval) {
+          this.editor.setMode("text")
+        } else {
+          this.editor.setMode("tree")
+        }
+      });
+      if (this.$props.injectHandle) {
+        var handle = this.$props.injectHandle();
+        handle.getJson = function() {
+          return editor.get();
+        }
+      }
+    }
+  });
+  new Vue({
+    el: '#app',
+    router: new VueRouter({
+      routes:  [
+        { path: '/', redirect: '/create' },
+        { path: '/create', component: KmrCreateJob }
+      ]
+    })
+  });
+
+  </script>
+</body>
+</html>
