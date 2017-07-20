@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path"
 	"regexp"
+	"strings"
 
 	"github.com/naturali/kmr/job"
 	"github.com/naturali/kmr/util/log"
@@ -21,8 +22,9 @@ var (
 
 // KmrManagerWeb KMR Web server
 type KmrManagerWeb struct {
-	Namespace   string
-	ConfigStore string
+	Namespace        string
+	ManagerNamespace string
+	ConfigStore      string
 
 	k8sclient *kubernetes.Clientset
 
@@ -37,14 +39,15 @@ type KmrManagerWeb struct {
 }
 
 // NewKmrManagerWeb New web server
-func NewKmrManagerWeb(namespace, configStore string, k8sClient *kubernetes.Clientset) *KmrManagerWeb {
+func NewKmrManagerWeb(namespace, managerNamespace, configStore string, k8sClient *kubernetes.Clientset) *KmrManagerWeb {
 	nameRegex, _ := regexp.Compile("^[a-z]([-a-z0-9]*[a-z0-9])?$")
 
 	server := KmrManagerWeb{
-		Namespace:   namespace,
-		ConfigStore: configStore,
-		k8sclient:   k8sClient,
-		nameRegex:   nameRegex,
+		Namespace:        namespace,
+		ManagerNamespace: managerNamespace,
+		ConfigStore:      configStore,
+		k8sclient:        k8sClient,
+		nameRegex:        nameRegex,
 	}
 	curDir, _ := Getcurdir()
 	server.uiDir = path.Join(curDir, "ui")
@@ -93,6 +96,7 @@ func (server *KmrManagerWeb) Serve(port *string) {
 	handler.HandleFunc("/", server.IndexHandler)
 	handler.HandleFunc("/hello", server.HelloHandler)
 	handler.HandleFunc("/api/v1/create", server.CreateJobHandler)
+	handler.HandleFunc("/api/v1/jobs/", server.JobHandler)
 
 	// Start server
 	log.Infof("Listening at %s", *port)
@@ -108,6 +112,21 @@ func (server *KmrManagerWeb) HelloHandler(w http.ResponseWriter, r *http.Request
 	io.WriteString(w, "Hello!")
 }
 
+func (server *KmrManagerWeb) JobHandler(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(r.URL.Path, "/")
+	job := parts[len(parts)-1]
+
+	json, ok := server.configs[job]
+	if !ok {
+		w.WriteHeader(http.StatusNotFound)
+		io.WriteString(w, fmt.Sprintf("Cant not find job %s", job))
+		return
+	}
+	headers := w.Header()
+	headers["Content-Type"] = []string{"application/json"}
+	io.WriteString(w, json)
+}
+
 type CreateJobData struct {
 	Name  string `json:"name"`
 	Image string `json:"image"`
@@ -117,6 +136,7 @@ type CreateJobData struct {
 	JobDesc job.JobDescription `json:"jobDesc"`
 }
 
+// CreateJobHandler Create job
 func (server *KmrManagerWeb) CreateJobHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 	raw, err := ioutil.ReadAll(r.Body)
@@ -133,8 +153,21 @@ func (server *KmrManagerWeb) CreateJobHandler(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// store job config
+
+	rebuiltJobConfig, _ := json.Marshal(body.JobDesc)
+	server.configs[body.Name] = string(rebuiltJobConfig)
+
+	// start master
+	command := []string{
+		"go", "run", "/go/src/github.com/naturali/kmr/cmd/master/main.go",
+		"-config",
+		fmt.Sprintf("http://kmr.%s/api/v1/jobs/%s", server.ManagerNamespace, body.Name),
+		"-jobname",
+		body.Name,
+	}
 	service := server.NewMasterService(body.Name)
-	pod := server.NewMasterPod(body.Name, body.Image, body.Command)
+	pod := server.NewMasterPod(body.Name, body.Image, command)
 	err = server.StartMaster(pod, service)
 	if err != nil {
 		w.WriteHeader(http.StatusInternalServerError)

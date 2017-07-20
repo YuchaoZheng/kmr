@@ -14,9 +14,10 @@ import (
 )
 
 var (
-	port        = flag.String("port", ":50081", "port")
-	namespace   = flag.String("namespace", "kmr", "kubernetes namespace to run KMR task")
-	configStore = flag.String("config-store", "/tmp", "path to save job config")
+	port             = flag.String("port", ":50081", "port")
+	namespace        = flag.String("namespace", "kmr", "kubernetes namespace to run KMR task")
+	managerNamespace = flag.String("manager-namespace", "default", "kubernetes namespace to run KMR manager")
+	configStore      = flag.String("config-store", "/tmp", "path to save job config")
 )
 
 func main() {
@@ -51,7 +52,7 @@ func main() {
 	}
 
 	// server
-	server := manager.NewKmrManagerWeb(*namespace, *configStore, clientset)
+	server := manager.NewKmrManagerWeb(*namespace, *managerNamespace, *configStore, clientset)
 	server.Serve(port)
 
 }

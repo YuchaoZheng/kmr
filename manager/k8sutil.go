@@ -26,8 +26,9 @@ func (server *KmrManagerWeb) NewMasterPod(name, image string, command []string) 
 			RestartPolicy:      v1.RestartPolicyNever,
 			Containers: []v1.Container{
 				v1.Container{
-					Name:  "kmr-master",
-					Image: image,
+					Name:    "kmr-master",
+					Image:   image,
+					Command: command,
 					Ports: []v1.ContainerPort{
 						v1.ContainerPort{
 							ContainerPort: masterPort,
