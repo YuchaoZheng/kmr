@@ -52,15 +52,15 @@
         <el-form-item label="Image">
           <el-input v-model="job.image"></el-input>
         </el-form-item>
-        <el-form-item label="Command">
-          <el-input v-model="job.command"></el-input>
-        </el-form-item>
         <el-form-item label="Description">
           <json-editor :json="job.jobDesc" :injectHandle="() => this.jsonHandle"/>
         </el-form-item>
+        <el-form-item label-width="80px">
+          <el-button type="primary" @click="submitJob">Confirm</el-button>
+        </el-form-item>
       </el-form>
-      <el-button >Cancel</el-button>
-      <el-button type="primary" @click="submitJob">Confirm</el-button>
+
+
     </div>
   </script>
 
