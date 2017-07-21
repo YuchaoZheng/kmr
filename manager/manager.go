@@ -162,7 +162,7 @@ func (server *KmrManagerWeb) CreateJobHandler(w http.ResponseWriter, r *http.Req
 	command := []string{
 		"go", "run", "/go/src/github.com/naturali/kmr/cmd/master/main.go",
 		"-config",
-		fmt.Sprintf("http://kmr.%s/api/v1/jobs/%s", server.ManagerNamespace, body.Name),
+		fmt.Sprintf("http://kmr-manager.%s/api/v1/jobs/%s", server.ManagerNamespace, body.Name),
 		"-jobname",
 		body.Name,
 	}
