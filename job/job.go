@@ -9,7 +9,7 @@ type MapDescription struct {
 	Image      string   `json:"image"`
 	Command    []string `json:"command"`
 	ReaderType string   `json:"readerType"`
-	BatchSize  int      `json:"batchSize"`
+	BatchSize  *int     `json:"batchSize,omitempty"` // use pointer to ensure empty is empty
 }
 
 // ReduceDescription ReduceDescription
