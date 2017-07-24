@@ -34,8 +34,7 @@ type Mapper interface {
 type Reducer interface {
 	InputOutputClassBase
 	MapperReducerBase
-	Reduce(key interface{}, values chan interface{}, output func(k interface{}, v interface{}), reporter interface{})
-	BeforeReduce()
+	Reduce(key interface{}, valuesNext func() (interface{}, error), output func(k interface{}, v interface{}), reporter interface{})
 }
 
 //MapReduceBase Mapper and Reducer base class
@@ -64,4 +63,11 @@ func (tb *MapReduceBase) GetOutputValueClass() TypeClass {
 
 //BeforeRun default empty
 func (tb *MapReduceBase) BeforeRun() {
+}
+
+//ForEachValue iterate values using iterator
+func ForEachValue(valuesNext func() (interface{}, error), handler func(interface{})) {
+	for v, err := valuesNext(); err == nil; v, err = valuesNext() {
+		handler(v)
+	}
 }

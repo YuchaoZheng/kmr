@@ -31,12 +31,12 @@ func (*MyMap) Map(key interface{}, value interface{}, output func(k, v interface
 	}
 }
 
-func (*MyReduce) Reduce(key interface{}, values chan interface{}, output func(k interface{}, v interface{}), reporter interface{}) {
+func (*MyReduce) Reduce(key interface{}, valuesNext func() (interface{}, error), output func(k interface{}, v interface{}), reporter interface{}) {
 	var count uint64
-	for v := range values {
-		val, _ := v.(uint64)
+	mapred.ForEachValue(valuesNext, func(value interface{}) {
+		val, _ := value.(uint64)
 		count += val
-	}
+	})
 	fmt.Println(key, " ", count)
 	output(key, count)
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"sort"
@@ -21,6 +22,7 @@ import (
 	"github.com/naturali/kmr/records"
 	"github.com/naturali/kmr/util"
 	"github.com/naturali/kmr/util/log"
+	"github.com/reusee/mmh3"
 )
 
 var (
@@ -36,6 +38,10 @@ var (
 	readerType = flag.String("reader-type", "textfile", "type of record reader for input files")
 
 	masterAddr = flag.String("master-addr", "", "the address of master")
+)
+
+const (
+	ReducerConcurrentLevel = 4
 )
 
 func getCollectFunc(outClass mapred.OutputClassBase, outputKV chan<- *kmrpb.KV) func(k, v interface{}) {
@@ -206,38 +212,48 @@ func (cw *ComputeWrapClass) doReduce(interBk bucket.Bucket, reduceID int, nMap, 
 	sorted := make(chan *records.Record, 1024)
 	go records.MergeSort(readers, sorted)
 
-	inputs := make(chan *kmrpb.KV, 1024)
-	// outputs := cw.reduceFunc(inputs)
 	outputs := make(chan *kmrpb.KV, 1024)
 	cw.reduceClass.BeforeRun()
-	keyClass, valueClass := cw.reduceClass.GetInputKeyClass(), cw.reduceClass.GetInputValueClass()
-	go func() {
-		var valueChan chan interface{}
-		var prevKeyBytes []byte
-		var wg sync.WaitGroup
-		for kvpair := range inputs {
-			if prevKeyBytes == nil || !bytes.Equal(prevKeyBytes, kvpair.Key) {
-				if prevKeyBytes != nil {
-					close(valueChan)
+	reducerCaller := func(inputs <-chan *kmrpb.KV, wg *sync.WaitGroup) {
+		keyClass, valueClass := cw.reduceClass.GetInputKeyClass(), cw.reduceClass.GetInputValueClass()
+		startKVPair := <-inputs
+		stopFlag := startKVPair == nil
+		for !stopFlag {
+			key := keyClass.FromBytes(startKVPair.Key)
+			curKeyBytes := startKVPair.Key[:]
+			reduceIteratedAllValue := false
+			nextFunc := func() (interface{}, error) {
+				if reduceIteratedAllValue {
+					return nil, errors.New("EOINPUT")
 				}
-				valueChan = make(chan interface{}, 128)
-				key := keyClass.FromBytes(kvpair.Key)
-				wg.Add(1)
-				go func() {
-					cw.reduceClass.Reduce(key, valueChan, getCollectFunc(cw.reduceClass, outputs), nil)
-					wg.Done()
-				}()
-				prevKeyBytes = kvpair.Key[:]
+				if startKVPair != nil {
+					tmp := startKVPair.Value[:]
+					startKVPair = nil
+					return valueClass.FromBytes(tmp), nil
+				}
+				kvpair := <-inputs
+				if kvpair != nil {
+					if bytes.Equal(kvpair.Key[:], curKeyBytes[:]) {
+						return valueClass.FromBytes(kvpair.Value), nil
+					}
+					startKVPair = kvpair
+					reduceIteratedAllValue = true
+					return nil, errors.New("EOKEY")
+				}
+				stopFlag = true
+				reduceIteratedAllValue = true
+				return nil, errors.New("EOINPUT")
 			}
-			//TODO: implement report
-			valueChan <- valueClass.FromBytes(kvpair.Value)
+			cw.reduceClass.Reduce(key, nextFunc, getCollectFunc(cw.reduceClass, outputs), nil)
+			for !reduceIteratedAllValue {
+				nextFunc()
+			}
 		}
-		close(valueChan)
-		wg.Wait()
-		close(outputs)
-	}()
+		wg.Done()
+	}
 
 	var wg sync.WaitGroup
+	var wgForReducerCaller sync.WaitGroup
 	wg.Add(1)
 	go func(outputs <-chan *kmrpb.KV) {
 		for r := range outputs {
@@ -245,10 +261,31 @@ func (cw *ComputeWrapClass) doReduce(interBk bucket.Bucket, reduceID int, nMap, 
 		}
 		wg.Done()
 	}(outputs)
-	for r := range sorted {
-		inputs <- RecordToKV(r)
+
+	var inputsArr [ReducerConcurrentLevel]chan *kmrpb.KV
+	for i := range inputsArr {
+		inputsArr[i] = make(chan *kmrpb.KV, 1024)
+		wgForReducerCaller.Add(1)
+		go reducerCaller(inputsArr[i], &wgForReducerCaller)
 	}
-	close(inputs)
+
+	for r := range sorted {
+		if ReducerConcurrentLevel == 1 {
+			inputsArr[0] <- RecordToKV(r)
+		} else {
+			k := mmh3.Hash32(r.Key[:]) % ReducerConcurrentLevel
+			inputsArr[k] <- RecordToKV(r)
+		}
+	}
+
+	for i := range inputsArr {
+		inputsArr[i] <- nil
+		close(inputsArr[i])
+	}
+
+	wgForReducerCaller.Wait()
+	close(outputs)
+
 	wg.Wait()
 	log.Debug("DONE Reduce. Took:", time.Since(startTime))
 	return nil
