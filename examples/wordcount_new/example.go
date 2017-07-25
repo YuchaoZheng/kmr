@@ -5,7 +5,7 @@ import (
 	"strings"
 	"unicode"
 
-	"github.com/naturali/kmr/executor_new"
+	"github.com/naturali/kmr/executor"
 	"github.com/naturali/kmr/mapred"
 )
 
@@ -13,15 +13,15 @@ const (
 	MAX_WORD_LENGTH = 20
 )
 
-type MyMap struct {
+type WordCountMap struct {
 	mapred.MapReduceBase
 }
 
-type MyReduce struct {
+type WordCountReduce struct {
 	mapred.MapReduceBase
 }
 
-func (*MyMap) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
+func (*WordCountMap) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
 	v, _ := value.(string)
 	for _, procceed := range ProcessSingleSentence(strings.Trim(v, "\n")) {
 		if len(procceed) > MAX_WORD_LENGTH {
@@ -31,7 +31,7 @@ func (*MyMap) Map(key interface{}, value interface{}, output func(k, v interface
 	}
 }
 
-func (*MyReduce) Reduce(key interface{}, valuesNext func() (interface{}, error), output func(k interface{}, v interface{}), reporter interface{}) {
+func (*WordCountReduce) Reduce(key interface{}, valuesNext func() (interface{}, error), output func(k interface{}, v interface{}), reporter interface{}) {
 	var count uint64
 	mapred.ForEachValue(valuesNext, func(value interface{}) {
 		val, _ := value.(uint64)
@@ -75,7 +75,7 @@ func ProcessSingleSentence(line string) []string {
 }
 
 func main() {
-	mymap := &MyMap{
+	wcmap := &WordCountMap{
 		mapred.MapReduceBase{
 			InputKeyClass:    mapred.Int32{},
 			InputValueClass:  mapred.String{},
@@ -83,7 +83,7 @@ func main() {
 			OutputValueClass: mapred.Uint64{},
 		},
 	}
-	myreduce := &MyReduce{
+	wcreduce := &WordCountReduce{
 		mapred.MapReduceBase{
 			InputKeyClass:    mapred.String{},
 			InputValueClass:  mapred.Uint64{},
@@ -91,8 +91,8 @@ func main() {
 			OutputValueClass: mapred.Uint64{},
 		},
 	}
-	cw := &executor_new.ComputeWrapClass{}
-	cw.BindMapper(mymap)
-	cw.BindReducer(myreduce)
+	cw := &executor.ComputeWrapClass{}
+	cw.BindMapper(wcmap)
+	cw.BindReducer(wcreduce)
 	cw.Run()
 }
