@@ -3,116 +3,126 @@ package mapred
 import (
 	"bytes"
 	"encoding/binary"
+
+	"github.com/naturali/kmr/util/log"
 )
 
-//Integer64 int64
+// Int64 int64
 type Int64 struct{}
 
-//UnsignedInteger64 int64
+// Uint64 uint64
 type Uint64 struct{}
 
-//String string
+// String string
 type String struct{}
 
-//Bytes []byte
+// Bytes []byte
 type Bytes struct{}
 
-//Int32 int32
+// Int32 int32
 type Int32 struct{}
 
-//TypeClass Interface of both key and value
-type TypeClass interface {
+// TypeConverter Interface of both key and value
+type TypeConverter interface {
 	FromBytes(b []byte) interface{}
 	ToBytes(v interface{}) []byte
 }
 
-//FromBytes get value of int64, little endian
+// FromBytes get value of int64, little endian
 func (v Uint64) FromBytes(b []byte) interface{} {
 	if len(b) != 8 {
-		panic(b)
+		log.Fatalf("Convert %v failed", b)
 	} else {
 		return binary.LittleEndian.Uint64(b)
 	}
+	return nil
 }
 
-//ToBytes convert uint64 to bytes
+// ToBytes convert uint64 to bytes
 func (v Uint64) ToBytes(val interface{}) []byte {
 	if res, ok := val.(uint64); ok {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, res)
 		return b
 	}
-	panic(v)
+	log.Fatalf("Convert %v failed", v)
+	return nil
 }
 
-//FromBytes get value of int64, little endian
+// FromBytes get value of int64, little endian
 func (v Int64) FromBytes(b []byte) interface{} {
 	if len(b) != 8 {
-		panic(b)
+		log.Fatalf("Convert %v failed", b)
 	} else {
 		var val int64
 		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &val); err == nil {
 			return val
 		}
-		panic(b)
+		log.Fatalf("Convert %v failed", b)
 	}
+	return nil
 }
 
-//ToBytes convert int64 to bytes
+// ToBytes convert int64 to bytes
 func (v Int64) ToBytes(val interface{}) []byte {
 	if res, ok := val.(int64); ok {
 		b := make([]byte, 8)
 		binary.Write(bytes.NewBuffer(b), binary.LittleEndian, res)
 		return b
 	}
-	panic(v)
+	log.Fatalf("Convert %v failed", v)
+	return nil
 }
 
-//FromBytes get value of string
+// FromBytes convert bytes to string
 func (s String) FromBytes(b []byte) interface{} {
 	return string(b)
 }
 
-//ToBytes convert string to bytes
+// ToBytes convert string to bytes
 func (s String) ToBytes(str interface{}) []byte {
 	if res, ok := str.(string); ok {
 		return []byte(res)
 	}
-	panic(str)
+	log.Fatalf("Convert %v failed", str)
+	return nil
 }
 
-//FromBytes return bytes slice
+// FromBytes return bytes slice
 func (bs Bytes) FromBytes(b []byte) interface{} {
 	return b[:]
 }
 
-//ToBytes return bytes slice
+// ToBytes return bytes self
 func (bs Bytes) ToBytes(b interface{}) []byte {
 	if res, ok := b.([]byte); ok {
 		return res
 	}
-	panic(b)
+	log.Fatalf("Convert %v failed", b)
+	return nil
 }
 
-//FromBytes int32 to bytes
+// FromBytes int32 to bytes
 func (Int32) FromBytes(b []byte) interface{} {
 	if len(b) != 4 {
-		panic(b)
+		log.Fatalf("Convert %v failed", b)
 	} else {
 		var val int32
 		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &val); err == nil {
 			return val
 		}
-		panic(b)
+		log.Fatalf("Convert %v failed", b)
 	}
+	return nil
 }
 
-//ToBytes bytes to int32
+// ToBytes bytes to int32
 func (Int32) ToBytes(val interface{}) []byte {
 	if res, ok := val.(int32); ok {
 		b := make([]byte, 8)
 		binary.Write(bytes.NewBuffer(b), binary.LittleEndian, res)
 		return b
 	}
-	panic(val)
+	log.Fatalf("Convert %v failed", val)
+	return nil
 }

@@ -77,18 +77,18 @@ func ProcessSingleSentence(line string) []string {
 func main() {
 	wcmap := &WordCountMap{
 		mapred.MapReduceBase{
-			InputKeyClass:    mapred.Int32{},
-			InputValueClass:  mapred.String{},
-			OutputKeyClass:   mapred.String{},
-			OutputValueClass: mapred.Uint64{},
+			InputKeyTypeConverter:    mapred.Int32{},
+			InputValueTypeConverter:  mapred.String{},
+			OutputKeyTypeConverter:   mapred.String{},
+			OutputValueTypeConverter: mapred.Uint64{},
 		},
 	}
 	wcreduce := &WordCountReduce{
 		mapred.MapReduceBase{
-			InputKeyClass:    mapred.String{},
-			InputValueClass:  mapred.Uint64{},
-			OutputKeyClass:   mapred.String{},
-			OutputValueClass: mapred.Uint64{},
+			InputKeyTypeConverter:    mapred.String{},
+			InputValueTypeConverter:  mapred.Uint64{},
+			OutputKeyTypeConverter:   mapred.String{},
+			OutputValueTypeConverter: mapred.Uint64{},
 		},
 	}
 	cw := &executor.ComputeWrapClass{}

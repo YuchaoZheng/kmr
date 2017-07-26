@@ -21,8 +21,8 @@ import (
 	"github.com/naturali/kmr/util"
 	"github.com/naturali/kmr/util/log"
 
-	"google.golang.org/grpc"
 	"github.com/reusee/mmh3"
+	"google.golang.org/grpc"
 )
 
 var (
@@ -44,27 +44,27 @@ const (
 	ReducerConcurrentLevel = 4
 )
 
-func getCollectFunc(outClass mapred.OutputClassBase, outputKV chan<- *kmrpb.KV) func(k, v interface{}) {
+func getCollectFunc(outTypeConverter mapred.OutputTypeConverter, outputKV chan<- *kmrpb.KV) func(k, v interface{}) {
 	return func(k, v interface{}) {
-		keyBytes := outClass.GetOutputKeyClass().ToBytes(k)
-		valueBytes := outClass.GetOutputValueClass().ToBytes(v)
+		keyBytes := outTypeConverter.GetOutputKeyTypeConverter().ToBytes(k)
+		valueBytes := outTypeConverter.GetOutputValueTypeConverter().ToBytes(v)
 		outputKV <- &kmrpb.KV{Key: keyBytes, Value: valueBytes}
 	}
 }
 
 type ComputeWrapClass struct {
-	mapClass    mapred.Mapper
-	reduceClass mapred.Reducer
+	mapper  mapred.Mapper
+	reducer mapred.Reducer
 	// combineClass mapred.Reducer
 	combineFunc func(v1 []byte, v2 []byte) []byte
 }
 
 func (cw *ComputeWrapClass) BindMapper(mapper mapred.Mapper) {
-	cw.mapClass = mapper
+	cw.mapper = mapper
 }
 
 func (cw *ComputeWrapClass) BindReducer(reducer mapred.Reducer) {
-	cw.reduceClass = reducer
+	cw.reducer = reducer
 }
 
 func (cw *ComputeWrapClass) BindCombiner(combiner func(v1 []byte, v2 []byte) []byte) {
@@ -83,14 +83,14 @@ func (cw *ComputeWrapClass) doMap(rr records.RecordReader, bk bucket.Bucket, map
 	inputKV := make(chan *kmrpb.KV, 1024)
 	outputKV := make(chan *kmrpb.KV, 1024)
 	// outputKV := cw.mapFunc(inputKV)
-	cw.mapClass.BeforeRun()
-	keyClass, valueClass := cw.mapClass.GetInputKeyClass(), cw.mapClass.GetInputValueClass()
+	cw.mapper.Init()
+	keyClass, valueClass := cw.mapper.GetInputKeyTypeConverter(), cw.mapper.GetInputValueTypeConverter()
 	go func() {
 		for kvpair := range inputKV {
 			key := keyClass.FromBytes(kvpair.Key)
 			value := valueClass.FromBytes(kvpair.Value)
 			//TODO: implement report
-			cw.mapClass.Map(key, value, getCollectFunc(cw.mapClass, outputKV), nil)
+			cw.mapper.Map(key, value, getCollectFunc(cw.mapper, outputKV), nil)
 		}
 		close(outputKV)
 	}()
@@ -100,8 +100,7 @@ func (cw *ComputeWrapClass) doMap(rr records.RecordReader, bk bucket.Bucket, map
 		for in := range outputKV {
 			aggregated = append(aggregated, KVToRecord(in))
 			currentAggregatedSize += 8 + len(in.Key) + len(in.Value)
-			// if currentAggregatedSize >= *flushSize*1024*1024 {
-			if currentAggregatedSize >= 1*1024*1024 {
+			if currentAggregatedSize >= *flushSize*1024*1024 {
 				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles), workerID)
 				sem.Acquire(1)
 				go func(filename string, data []*records.Record) {
@@ -213,27 +212,27 @@ func (cw *ComputeWrapClass) doReduce(interBk bucket.Bucket, reduceID int, nMap, 
 	go records.MergeSort(readers, sorted)
 
 	outputs := make(chan *kmrpb.KV, 1024)
-	cw.reduceClass.BeforeRun()
+	cw.reducer.Init()
 	reducerCaller := func(inputs <-chan *kmrpb.KV, wg *sync.WaitGroup) {
-		keyClass, valueClass := cw.reduceClass.GetInputKeyClass(), cw.reduceClass.GetInputValueClass()
+		keyClass, valueClass := cw.reducer.GetInputKeyTypeConverter(), cw.reducer.GetInputValueTypeConverter()
 		startKVPair := <-inputs
 		stopFlag := startKVPair == nil
 		for !stopFlag {
 			key := keyClass.FromBytes(startKVPair.Key)
-			curKeyBytes := startKVPair.Key[:]
+			curKeyBytes := startKVPair.Key
 			reduceIteratedAllValue := false
 			nextFunc := func() (interface{}, error) {
 				if reduceIteratedAllValue {
 					return nil, errors.New("EOINPUT")
 				}
 				if startKVPair != nil {
-					tmp := startKVPair.Value[:]
+					tmp := startKVPair.Value
 					startKVPair = nil
 					return valueClass.FromBytes(tmp), nil
 				}
 				kvpair := <-inputs
 				if kvpair != nil {
-					if bytes.Equal(kvpair.Key[:], curKeyBytes[:]) {
+					if bytes.Equal(kvpair.Key, curKeyBytes) {
 						return valueClass.FromBytes(kvpair.Value), nil
 					}
 					startKVPair = kvpair
@@ -244,7 +243,7 @@ func (cw *ComputeWrapClass) doReduce(interBk bucket.Bucket, reduceID int, nMap, 
 				reduceIteratedAllValue = true
 				return nil, errors.New("EOINPUT")
 			}
-			cw.reduceClass.Reduce(key, nextFunc, getCollectFunc(cw.reduceClass, outputs), nil)
+			cw.reducer.Reduce(key, nextFunc, getCollectFunc(cw.reducer, outputs), nil)
 			for !reduceIteratedAllValue {
 				nextFunc()
 			}
@@ -273,7 +272,7 @@ func (cw *ComputeWrapClass) doReduce(interBk bucket.Bucket, reduceID int, nMap, 
 		if ReducerConcurrentLevel == 1 {
 			inputsArr[0] <- RecordToKV(r)
 		} else {
-			k := mmh3.Hash32(r.Key[:]) % ReducerConcurrentLevel
+			k := mmh3.Hash32(r.Key) % ReducerConcurrentLevel
 			inputsArr[k] <- RecordToKV(r)
 		}
 	}
@@ -314,10 +313,6 @@ func (cw *ComputeWrapClass) sortAndCombine(aggregated []*records.Record) []*reco
 		combined = append(combined, curRecord)
 	}
 	return combined
-}
-
-func (cw *ComputeWrapClass) aggregateValues(inputs <-chan *kmrpb.KV, values chan<- interface{}) {
-
 }
 
 func (cw *ComputeWrapClass) Run() {

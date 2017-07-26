@@ -1,71 +1,75 @@
 package mapred
 
-//InputClassBase input class base
-type InputClassBase interface {
-	GetInputKeyClass() TypeClass
-	GetInputValueClass() TypeClass
+// InputTypeConverter output type converter interface
+type InputTypeConverter interface {
+	GetInputKeyTypeConverter() TypeConverter
+	GetInputValueTypeConverter() TypeConverter
 }
 
-//OutputClassBase input class base
-type OutputClassBase interface {
-	GetOutputKeyClass() TypeClass
-	GetOutputValueClass() TypeClass
+// OutputTypeConverter output type converter interface
+type OutputTypeConverter interface {
+	GetOutputKeyTypeConverter() TypeConverter
+	GetOutputValueTypeConverter() TypeConverter
 }
 
-//InputOutputClassBase input class base
-type InputOutputClassBase interface {
-	InputClassBase
-	OutputClassBase
+// InputOutputTypeConverter input class base
+type InputOutputTypeConverter interface {
+	InputTypeConverter
+	OutputTypeConverter
 }
 
-//MapperReducerBase some common func
+// MapperReducerBase some common func
 type MapperReducerBase interface {
-	BeforeRun()
+	Init()
 }
 
-//Mapper Mapper interface
+// Mapper Mapper interface
 type Mapper interface {
-	InputOutputClassBase
+	InputOutputTypeConverter
 	MapperReducerBase
 	Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{})
 }
 
-//Reducer Reducer interface
+// Reducer Reducer interface
 type Reducer interface {
-	InputOutputClassBase
+	InputOutputTypeConverter
 	MapperReducerBase
 	Reduce(key interface{}, valuesNext func() (interface{}, error), output func(k interface{}, v interface{}), reporter interface{})
 }
 
-//MapReduceBase Mapper and Reducer base class
+// MapReduceBase Mapper and Reducer base class
 type MapReduceBase struct {
-	InputKeyClass    TypeClass
-	InputValueClass  TypeClass
-	OutputKeyClass   TypeClass
-	OutputValueClass TypeClass
+	InputKeyTypeConverter    TypeConverter
+	InputValueTypeConverter  TypeConverter
+	OutputKeyTypeConverter   TypeConverter
+	OutputValueTypeConverter TypeConverter
 }
 
-func (tb *MapReduceBase) GetInputKeyClass() TypeClass {
-	return tb.InputKeyClass
+// GetInputKeyTypeConverter get input key type converter
+func (tb *MapReduceBase) GetInputKeyTypeConverter() TypeConverter {
+	return tb.InputKeyTypeConverter
 }
 
-func (tb *MapReduceBase) GetOutputKeyClass() TypeClass {
-	return tb.OutputKeyClass
+// GetOutputKeyTypeConverter get output key type converter
+func (tb *MapReduceBase) GetOutputKeyTypeConverter() TypeConverter {
+	return tb.OutputKeyTypeConverter
 }
 
-func (tb *MapReduceBase) GetInputValueClass() TypeClass {
-	return tb.InputValueClass
+// GetInputValueTypeConverter get input value type converter
+func (tb *MapReduceBase) GetInputValueTypeConverter() TypeConverter {
+	return tb.InputValueTypeConverter
 }
 
-func (tb *MapReduceBase) GetOutputValueClass() TypeClass {
-	return tb.OutputValueClass
+// GetOutputValueTypeConverter get output value type converter
+func (tb *MapReduceBase) GetOutputValueTypeConverter() TypeConverter {
+	return tb.OutputValueTypeConverter
 }
 
-//BeforeRun default empty
-func (tb *MapReduceBase) BeforeRun() {
+// Init default empty init function
+func (tb *MapReduceBase) Init() {
 }
 
-//ForEachValue iterate values using iterator
+// ForEachValue iterate values using iterator
 func ForEachValue(valuesNext func() (interface{}, error), handler func(interface{})) {
 	for v, err := valuesNext(); err == nil; v, err = valuesNext() {
 		handler(v)
