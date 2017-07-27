@@ -22,6 +22,9 @@ type Bytes struct{}
 // Int32 int32
 type Int32 struct{}
 
+// Uint32 uint32
+type Uint32 struct{}
+
 // TypeConverter Interface of both key and value
 type TypeConverter interface {
 	FromBytes(b []byte) interface{}
@@ -119,9 +122,34 @@ func (Int32) FromBytes(b []byte) interface{} {
 // ToBytes bytes to int32
 func (Int32) ToBytes(val interface{}) []byte {
 	if res, ok := val.(int32); ok {
-		b := make([]byte, 8)
-		binary.Write(bytes.NewBuffer(b), binary.LittleEndian, res)
-		return b
+		wt := new(bytes.Buffer)
+		binary.Write(wt, binary.LittleEndian, res)
+		return wt.Bytes()
+	}
+	log.Fatalf("Convert %v failed", val)
+	return nil
+}
+
+// FromBytes uint32 to bytes
+func (Uint32) FromBytes(b []byte) interface{} {
+	if len(b) != 4 {
+		log.Fatalf("Convert %v failed", b)
+	} else {
+		var val uint32
+		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &val); err == nil {
+			return val
+		}
+		log.Fatalf("Convert %v failed", b)
+	}
+	return nil
+}
+
+// ToBytes bytes to int32
+func (Uint32) ToBytes(val interface{}) []byte {
+	if res, ok := val.(uint32); ok {
+		wt := new(bytes.Buffer)
+		binary.Write(wt, binary.LittleEndian, res)
+		return wt.Bytes()
 	}
 	log.Fatalf("Convert %v failed", val)
 	return nil

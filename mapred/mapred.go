@@ -1,44 +1,56 @@
 package mapred
 
-// InputTypeConverter output type converter interface
+// InputTypeConverter Output type converter interface
 type InputTypeConverter interface {
 	GetInputKeyTypeConverter() TypeConverter
 	GetInputValueTypeConverter() TypeConverter
 }
 
-// OutputTypeConverter output type converter interface
+// OutputTypeConverter Output type converter interface
 type OutputTypeConverter interface {
 	GetOutputKeyTypeConverter() TypeConverter
 	GetOutputValueTypeConverter() TypeConverter
 }
 
-// InputOutputTypeConverter input class base
+// InputOutputTypeConverter Both input and output type converter interface
 type InputOutputTypeConverter interface {
 	InputTypeConverter
 	OutputTypeConverter
 }
 
-// MapperReducerBase some common func
-type MapperReducerBase interface {
+// mapperReducer Some common function of mapper and reducer
+type mapperReducer interface {
 	Init()
+}
+
+const (
+	// ErrorNoMoreInput End of input
+	ErrorNoMoreInput = "Error no more input"
+	// ErrorNoMoreKey End of a key
+	ErrorNoMoreKey = "Error no more key"
+)
+
+// ValueIterator Value iterator for reducer
+type ValueIterator interface {
+	Next() (interface{}, error)
 }
 
 // Mapper Mapper interface
 type Mapper interface {
 	InputOutputTypeConverter
-	MapperReducerBase
+	mapperReducer
 	Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{})
 }
 
 // Reducer Reducer interface
 type Reducer interface {
 	InputOutputTypeConverter
-	MapperReducerBase
-	Reduce(key interface{}, valuesNext func() (interface{}, error), output func(k interface{}, v interface{}), reporter interface{})
+	mapperReducer
+	Reduce(key interface{}, valuesNext ValueIterator, output func(v interface{}), reporter interface{})
 }
 
-// MapReduceBase Mapper and Reducer base class
-type MapReduceBase struct {
+// TypeConverters Define type converters for mapper and reducer, so user defined mapper/reducer will not need to handle []byte.
+type TypeConverters struct {
 	InputKeyTypeConverter    TypeConverter
 	InputValueTypeConverter  TypeConverter
 	OutputKeyTypeConverter   TypeConverter
@@ -46,32 +58,40 @@ type MapReduceBase struct {
 }
 
 // GetInputKeyTypeConverter get input key type converter
-func (tb *MapReduceBase) GetInputKeyTypeConverter() TypeConverter {
+func (tb *TypeConverters) GetInputKeyTypeConverter() TypeConverter {
 	return tb.InputKeyTypeConverter
 }
 
 // GetOutputKeyTypeConverter get output key type converter
-func (tb *MapReduceBase) GetOutputKeyTypeConverter() TypeConverter {
+func (tb *TypeConverters) GetOutputKeyTypeConverter() TypeConverter {
 	return tb.OutputKeyTypeConverter
 }
 
 // GetInputValueTypeConverter get input value type converter
-func (tb *MapReduceBase) GetInputValueTypeConverter() TypeConverter {
+func (tb *TypeConverters) GetInputValueTypeConverter() TypeConverter {
 	return tb.InputValueTypeConverter
 }
 
 // GetOutputValueTypeConverter get output value type converter
-func (tb *MapReduceBase) GetOutputValueTypeConverter() TypeConverter {
+func (tb *TypeConverters) GetOutputValueTypeConverter() TypeConverter {
 	return tb.OutputValueTypeConverter
 }
 
-// Init default empty init function
-func (tb *MapReduceBase) Init() {
+// MapperCommon Every implemention of Mapper interface should embeded this struct
+type MapperCommon struct {
+	TypeConverters
 }
 
-// ForEachValue iterate values using iterator
-func ForEachValue(valuesNext func() (interface{}, error), handler func(interface{})) {
-	for v, err := valuesNext(); err == nil; v, err = valuesNext() {
-		handler(v)
-	}
+// Init default empty init function
+func (tb *MapperCommon) Init() {
+}
+
+// ReducerCommon Every implemention of Reducer interface should embeded this struct
+type ReducerCommon struct {
+	// TypeConverters Declare the type converters which will help to handle raw []byte
+	TypeConverters
+}
+
+// Init default empty init function
+func (tb *ReducerCommon) Init() {
 }

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 	"unicode"
 
@@ -10,35 +9,36 @@ import (
 )
 
 const (
-	MAX_WORD_LENGTH = 20
+	maxWordLength = 20
 )
 
-type WordCountMap struct {
-	mapred.MapReduceBase
+type wordCountMap struct {
+	mapred.MapperCommon
 }
 
-type WordCountReduce struct {
-	mapred.MapReduceBase
+type wordCountReduce struct {
+	mapred.ReducerCommon
 }
 
-func (*WordCountMap) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
+// Map Value is lines from file. Map function split lines into words and emit (word, 1) pairs
+func (*wordCountMap) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
 	v, _ := value.(string)
-	for _, procceed := range ProcessSingleSentence(strings.Trim(v, "\n")) {
-		if len(procceed) > MAX_WORD_LENGTH {
+	for _, procceed := range processSingleSentence(strings.Trim(v, "\n")) {
+		if len(procceed) > maxWordLength {
 			continue
 		}
-		output(procceed, uint64(1))
+		output(procceed, uint32(1))
 	}
 }
 
-func (*WordCountReduce) Reduce(key interface{}, valuesNext func() (interface{}, error), output func(k interface{}, v interface{}), reporter interface{}) {
-	var count uint64
+// Reduce key is word and valueNext is an iterator function. Add all values of one key togather to count the word occurs
+func (*wordCountReduce) Reduce(key interface{}, valuesNext mapred.ValueIterator, output func(v interface{}), reporter interface{}) {
+	var count uint32
 	mapred.ForEachValue(valuesNext, func(value interface{}) {
-		val, _ := value.(uint64)
+		val, _ := value.(uint32)
 		count += val
 	})
-	fmt.Println(key, " ", count)
-	output(key, count)
+	output(count)
 }
 
 func isAlphaOrNumber(r rune) bool {
@@ -49,46 +49,50 @@ func isChinese(r rune) bool {
 	return r >= '\u4e00' && r <= '\u9fa5'
 }
 
-func ProcessSingleSentence(line string) []string {
+func processSingleSentence(line string) []string {
 	outputs := make([]string, 0)
-	e_word := ""
+	englishWord := ""
 	for _, r := range line {
 		if isChinese(r) {
-			if len(e_word) > 0 {
-				outputs = append(outputs, e_word)
-				e_word = ""
+			if len(englishWord) > 0 {
+				outputs = append(outputs, englishWord)
+				englishWord = ""
 			}
 			outputs = append(outputs, string(r))
 		} else if isAlphaOrNumber(r) {
-			e_word += string(r)
+			englishWord += string(r)
 		} else {
-			if len(e_word) > 0 {
-				outputs = append(outputs, e_word)
-				e_word = ""
+			if len(englishWord) > 0 {
+				outputs = append(outputs, englishWord)
+				englishWord = ""
 			}
 		}
 	}
-	if len(e_word) > 0 {
-		outputs = append(outputs, e_word)
+	if len(englishWord) > 0 {
+		outputs = append(outputs, englishWord)
 	}
 	return outputs
 }
 
 func main() {
-	wcmap := &WordCountMap{
-		mapred.MapReduceBase{
-			InputKeyTypeConverter:    mapred.Int32{},
-			InputValueTypeConverter:  mapred.String{},
-			OutputKeyTypeConverter:   mapred.String{},
-			OutputValueTypeConverter: mapred.Uint64{},
+	wcmap := &wordCountMap{
+		mapred.MapperCommon{
+			mapred.TypeConverters{
+				InputKeyTypeConverter:    mapred.Int32{},
+				InputValueTypeConverter:  mapred.String{},
+				OutputKeyTypeConverter:   mapred.String{},
+				OutputValueTypeConverter: mapred.Uint32{},
+			},
 		},
 	}
-	wcreduce := &WordCountReduce{
-		mapred.MapReduceBase{
-			InputKeyTypeConverter:    mapred.String{},
-			InputValueTypeConverter:  mapred.Uint64{},
-			OutputKeyTypeConverter:   mapred.String{},
-			OutputValueTypeConverter: mapred.Uint64{},
+	wcreduce := &wordCountReduce{
+		mapred.ReducerCommon{
+			mapred.TypeConverters{
+				InputKeyTypeConverter:    mapred.Int32{},
+				InputValueTypeConverter:  mapred.String{},
+				OutputKeyTypeConverter:   mapred.String{},
+				OutputValueTypeConverter: mapred.Uint32{},
+			},
 		},
 	}
 	cw := &executor.ComputeWrapClass{}
