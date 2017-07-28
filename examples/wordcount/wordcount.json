@@ -26,7 +26,7 @@
     ],
     "volumes": [
       {
-        "name": "cephhfs",
+        "name": "cephfs",
         "hostPath": {
           "path": "/mnt/cephfs"
         }

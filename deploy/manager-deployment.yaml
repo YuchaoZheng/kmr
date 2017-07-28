@@ -1,0 +1,43 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  name: kmr-manager
+  labels:
+    app: kmr-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kmr-manager
+  template:
+    metadata:
+      labels:
+        app: kmr-manager
+    spec:
+      nodeSelector:
+        beta.kubernetes.io/arch: amd64
+      serviceAccountName: kmr-manager
+      containers:
+      - name: kmr-manager
+        image: kmr-manager
+        command: [ "go", "run", "/go/src/github.com/naturali/kmr/cmd/manager/main.go" ]
+        ports:
+        - containerPort: 50081
+          protocol: TCP
+        securityContext:
+          privileged: true
+
+---
+kind: Service
+apiVersion: v1
+metadata:
+  labels:
+    app: kmr-manager
+  name: kmr-manager
+spec:
+  type: NodePort
+  ports:
+  - port: 80
+    targetPort: 50081
+  selector:
+    app: kmr-manager
