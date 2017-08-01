@@ -71,7 +71,6 @@ func main() {
 	}
 
 	var jobDescription job.JobDescription
-	jobDescription.Map.BatchSize = 1
 
 	if *configFile != "" {
 		var raw []byte
@@ -111,8 +110,7 @@ func main() {
 			InterBucket:  bucket,
 			ReduceBucket: bucket,
 			Map: job.MapDescription{
-				Objects:   strings.Split(*inputFile, ","),
-				BatchSize: 1,
+				Objects: strings.Split(*inputFile, ","),
 			},
 			Reduce: job.ReduceDescription{
 				NReduce: *nReduce,

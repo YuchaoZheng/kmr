@@ -123,7 +123,11 @@ func (master *Master) Schedule(phase string, ck *util.MapReduceCheckPoint) {
 	var batchSize int
 	switch phase {
 	case mapPhase:
-		batchSize = master.JobDesc.Map.BatchSize
+		if master.JobDesc.Map.BatchSize == nil {
+			batchSize = 1
+		} else {
+			batchSize = *master.JobDesc.Map.BatchSize
+		}
 		nTasks = len(master.JobDesc.Map.Objects) / batchSize
 		if len(master.JobDesc.Map.Objects)%batchSize > 0 {
 			nTasks++
@@ -148,7 +152,7 @@ func (master *Master) Schedule(phase string, ck *util.MapReduceCheckPoint) {
 			NReduce:                int32(master.JobDesc.Reduce.NReduce),
 			NMap:                   int32(len(master.JobDesc.Map.Objects)),
 			ReaderType:             master.JobDesc.Map.ReaderType,
-			MapBatchSize:           int32(master.JobDesc.Map.BatchSize),
+			MapBatchSize:           int32(batchSize),
 		}
 		if phase == mapPhase {
 			if (i+1)*batchSize > len(master.JobDesc.Map.Objects) { // Last batch
