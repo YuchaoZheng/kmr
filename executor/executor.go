@@ -2,7 +2,9 @@ package executor
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"flag"
 	"os"
 	"sort"
@@ -12,13 +14,14 @@ import (
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/job"
+	"github.com/naturali/kmr/mapred"
 	"github.com/naturali/kmr/master"
 	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/records"
 	"github.com/naturali/kmr/util"
 	"github.com/naturali/kmr/util/log"
 
-	"golang.org/x/net/context"
+	"github.com/reusee/mmh3"
 	"google.golang.org/grpc"
 )
 
@@ -37,25 +40,30 @@ var (
 	masterAddr = flag.String("master-addr", "", "the address of master")
 )
 
-type ComputeWrap struct {
-	mapFunc     func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
-	reduceFunc  func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV
+const (
+	ReducerConcurrentLevel = 16
+)
+
+type ComputeWrapClass struct {
+	mapper  mapred.Mapper
+	reducer mapred.Reducer
+	// combineClass mapred.Reducer
 	combineFunc func(v1 []byte, v2 []byte) []byte
 }
 
-func (cw *ComputeWrap) BindMapper(mapper func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV) {
-	cw.mapFunc = mapper
+func (cw *ComputeWrapClass) BindMapper(mapper mapred.Mapper) {
+	cw.mapper = mapper
 }
 
-func (cw *ComputeWrap) BindReducer(reducer func(kvs <-chan *kmrpb.KV) <-chan *kmrpb.KV) {
-	cw.reduceFunc = reducer
+func (cw *ComputeWrapClass) BindReducer(reducer mapred.Reducer) {
+	cw.reducer = reducer
 }
 
-func (cw *ComputeWrap) BindCombiner(combiner func(v1 []byte, v2 []byte) []byte) {
+func (cw *ComputeWrapClass) BindCombiner(combiner func(v1 []byte, v2 []byte) []byte) {
 	cw.combineFunc = combiner
 }
 
-func (cw *ComputeWrap) Run() {
+func (cw *ComputeWrapClass) Run() {
 	flag.Parse()
 
 	if os.Getenv("KMR_MASTER_ADDRESS") != "" {
@@ -143,7 +151,7 @@ func (cw *ComputeWrap) Run() {
 	}
 }
 
-func (cw *ComputeWrap) phaseSelector(jobName string, phase string,
+func (cw *ComputeWrapClass) phaseSelector(jobName string, phase string,
 	mapBucket, interBucket, reduceBucket job.BucketDescription, files []string,
 	nMap int, nReduce int, readerType string, taskID int, workerID int64,
 	commitMappers []int64, mapBatchSize int) error {
@@ -197,7 +205,7 @@ func (cw *ComputeWrap) phaseSelector(jobName string, phase string,
 	return nil
 }
 
-func (cw *ComputeWrap) sortAndCombine(aggregated []*records.Record) []*records.Record {
+func (cw *ComputeWrapClass) sortAndCombine(aggregated []*records.Record) []*records.Record {
 	sort.Slice(aggregated, func(i, j int) bool {
 		return bytes.Compare(aggregated[i].Key, aggregated[j].Key) < 0
 	})
@@ -222,8 +230,7 @@ func (cw *ComputeWrap) sortAndCombine(aggregated []*records.Record) []*records.R
 	return combined
 }
 
-// doMap does map operation and save the intermediate files.
-func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID int, nReduce int, workerID int64) (err error) {
+func (cw *ComputeWrapClass) doMap(rr records.RecordReader, bk bucket.Bucket, mapID int, nReduce int, workerID int64) (err error) {
 	maxNumConcurrentFlush := 2
 	startTime := time.Now()
 	aggregated := make([]*records.Record, 0)
@@ -233,7 +240,24 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 	// map
 	waitc := make(chan struct{})
 	inputKV := make(chan *kmrpb.KV, 1024)
-	outputKV := cw.mapFunc(inputKV)
+	outputKV := make(chan *kmrpb.KV, 1024)
+	// outputKV := cw.mapFunc(inputKV)
+	cw.mapper.Init()
+	keyClass, valueClass := cw.mapper.GetInputKeyTypeConverter(), cw.mapper.GetInputValueTypeConverter()
+	go func() {
+		for kvpair := range inputKV {
+			key := keyClass.FromBytes(kvpair.Key)
+			value := valueClass.FromBytes(kvpair.Value)
+			//TODO: implement report
+			collectFunc := func(k, v interface{}) {
+				keyBytes := cw.mapper.GetOutputKeyTypeConverter().ToBytes(k)
+				valueBytes := cw.mapper.GetOutputValueTypeConverter().ToBytes(v)
+				outputKV <- &kmrpb.KV{Key: keyBytes, Value: valueBytes}
+			}
+			cw.mapper.Map(key, value, collectFunc, nil)
+		}
+		close(outputKV)
+	}()
 	go func() {
 		sem := util.NewSemaphore(maxNumConcurrentFlush)
 		var waitFlushWrite sync.WaitGroup
@@ -333,7 +357,7 @@ func (cw *ComputeWrap) doMap(rr records.RecordReader, bk bucket.Bucket, mapID in
 }
 
 // doReduce does reduce operation
-func (cw *ComputeWrap) doReduce(interBk bucket.Bucket, reduceID int, nMap, batchSize int, commitMappers []int64, writer records.RecordWriter) error {
+func (cw *ComputeWrapClass) doReduce(interBk bucket.Bucket, reduceID int, nMap, batchSize int, commitMappers []int64, writer records.RecordWriter) error {
 	startTime := time.Now()
 	readers := make([]records.RecordReader, 0)
 	nBatch := nMap / batchSize
@@ -351,20 +375,119 @@ func (cw *ComputeWrap) doReduce(interBk bucket.Bucket, reduceID int, nMap, batch
 	sorted := make(chan *records.Record, 1024)
 	go records.MergeSort(readers, sorted)
 
-	inputs := make(chan *kmrpb.KV, 1024)
-	outputs := cw.reduceFunc(inputs)
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func(outputs <-chan *kmrpb.KV) {
-		for r := range outputs {
-			writer.WriteRecord(KVToRecord(r))
+	readWhich := make(chan uint32, 1024)
+	var inputsArr [ReducerConcurrentLevel]chan *kmrpb.KV
+	var outputsArr [ReducerConcurrentLevel]chan *kmrpb.KV
+	endOfKeyGuard := &kmrpb.KV{Key: []byte{}, Value: []byte{}}
+
+	cw.reducer.Init()
+	reducerCaller := func(inputs <-chan *kmrpb.KV, outputs chan<- *kmrpb.KV, wg *sync.WaitGroup) {
+		keyClass, valueClass := cw.reducer.GetInputKeyTypeConverter(), cw.reducer.GetInputValueTypeConverter()
+		for {
+			startKVPair := <-inputs
+			if startKVPair == nil {
+				break
+			}
+			if startKVPair == endOfKeyGuard {
+				log.Fatal("Start KV pair should not be end of key guard")
+			}
+			key := keyClass.FromBytes(startKVPair.Key)
+			reducerIteratedAllValue := false
+			nextIter := &ValueIteratorFunc{
+				IterFunc: func() (interface{}, error) {
+					if reducerIteratedAllValue {
+						return nil, errors.New(mapred.ErrorNoMoreKey)
+					}
+					if startKVPair != nil {
+						tmp := startKVPair.Value
+						startKVPair = nil
+						return valueClass.FromBytes(tmp), nil
+					}
+					kvpair := <-inputs
+					if kvpair != endOfKeyGuard && kvpair != nil {
+						return valueClass.FromBytes(kvpair.Value), nil
+					}
+					reducerIteratedAllValue = true
+					if kvpair == nil {
+						return nil, errors.New(mapred.ErrorNoMoreInput)
+					}
+					return nil, errors.New(mapred.ErrorNoMoreKey)
+				},
+			}
+			alreadyOutput := false
+			collectFunc := func(v interface{}) {
+				if alreadyOutput {
+					log.Errorf("value of key: %v has been collected", key)
+					return
+				}
+				keyBytes := cw.reducer.GetOutputKeyTypeConverter().ToBytes(key)
+				valueBytes := cw.reducer.GetOutputValueTypeConverter().ToBytes(v)
+				outputs <- &kmrpb.KV{Key: keyBytes, Value: valueBytes}
+				alreadyOutput = true
+			}
+			cw.reducer.Reduce(key, nextIter, collectFunc, nil)
+			if !alreadyOutput {
+				outputs <- nil
+			}
+			for !reducerIteratedAllValue {
+				nextIter.IterFunc()
+			}
 		}
 		wg.Done()
-	}(outputs)
-	for r := range sorted {
-		inputs <- RecordToKV(r)
 	}
-	close(inputs)
+
+	var wg sync.WaitGroup
+	var wgForReducerCaller sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		for idx := range readWhich {
+			r := <-outputsArr[idx]
+			if r != nil {
+				writer.WriteRecord(KVToRecord(r))
+			}
+		}
+		wg.Done()
+	}()
+
+	for i := range inputsArr {
+		inputsArr[i] = make(chan *kmrpb.KV, 1024)
+		outputsArr[i] = make(chan *kmrpb.KV, 1024)
+		wgForReducerCaller.Add(1)
+		go reducerCaller(inputsArr[i], outputsArr[i], &wgForReducerCaller)
+	}
+
+	var prevKey []byte
+	var k uint32
+	for r := range sorted {
+		prevK := k
+		if ReducerConcurrentLevel == 1 {
+			k = 0
+		} else {
+			k = mmh3.Hash32(r.Key) % ReducerConcurrentLevel
+		}
+		if !bytes.Equal(prevKey, r.Key) {
+			if prevKey != nil {
+				inputsArr[prevK] <- endOfKeyGuard
+				readWhich <- prevK
+			}
+			prevKey = r.Key
+		}
+		inputsArr[k] <- RecordToKV(r)
+	}
+	readWhich <- k
+
+	for i := range inputsArr {
+		inputsArr[i] <- nil
+		close(inputsArr[i])
+	}
+	close(readWhich)
+
+	wgForReducerCaller.Wait()
+
+	for i := range outputsArr {
+		close(outputsArr[i])
+	}
+
 	wg.Wait()
 	log.Debug("DONE Reduce. Took:", time.Since(startTime))
 	return nil
@@ -378,4 +501,14 @@ func RecordToKV(record *records.Record) *kmrpb.KV {
 // KVToRecord converts a kmrpb.KV to an Record
 func KVToRecord(kv *kmrpb.KV) *records.Record {
 	return &records.Record{Key: kv.Key, Value: kv.Value}
+}
+
+// ValueIteratorFunc use a function as iterator interface
+type ValueIteratorFunc struct {
+	IterFunc func() (interface{}, error)
+}
+
+// Next call IterFunc directly
+func (vif *ValueIteratorFunc) Next() (interface{}, error) {
+	return vif.IterFunc()
 }
