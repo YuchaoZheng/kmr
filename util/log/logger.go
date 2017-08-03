@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"fmt"
 )
 
 var (
@@ -142,7 +143,7 @@ func Fatal(v ...interface{}) {
 		fs := filePath(l.errorL)
 		l.fatalL.Println(append([]interface{}{fs}, v...)...)
 	}
-	os.Exit(1)
+	panic(fmt.Sprintln(v...))
 }
 
 func Panic(v interface{}) {
@@ -162,7 +163,7 @@ func Fatalf(format string, v ...interface{}) {
 	} else {
 		l.fatalL.Printf(format, v...)
 	}
-	os.Exit(1)
+	panic(fmt.Sprintf(format, v...))
 }
 
 func filePath(clog *log.Logger) string {
