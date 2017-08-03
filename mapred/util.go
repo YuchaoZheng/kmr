@@ -1,5 +1,12 @@
 package mapred
 
+// ForEachValue iterate values using iterator
+func ForEachValue(values ValueIterator, handler func(interface{})) {
+	for v, err := values.Next(); err == nil; v, err = values.Next() {
+		handler(v)
+	}
+}
+
 type mapperFuncType func(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{})
 type reducerFuncType func(key interface{}, valuesNext ValueIterator, output func(v interface{}), reporter interface{})
 

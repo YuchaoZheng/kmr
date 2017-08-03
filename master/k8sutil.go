@@ -12,13 +12,13 @@ import (
 	v1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 )
 
-func (master *Master) newReplicaSet(name string, command []string, image string, replicas int32) v1beta1.ReplicaSet {
+func (w *K8sWorkerCtl) newReplicaSet(name string, command []string, image string, replicas int32) v1beta1.ReplicaSet {
 	// generate resourceRequirements
 	var resourceRequirements v1.ResourceRequirements
-	if master.JobDesc.CPULimit != "" {
-		cpulimt, err := resource.ParseQuantity(master.JobDesc.CPULimit)
+	if w.config.CPULimit != "" {
+		cpulimt, err := resource.ParseQuantity(w.config.CPULimit)
 		if err != nil {
-			log.Fatalf("Can't parse cpulimit \"%s\": %v", master.JobDesc.CPULimit, err)
+			log.Fatalf("Can't parse cpulimit \"%s\": %v", w.config.CPULimit, err)
 		}
 		resourceRequirements = v1.ResourceRequirements{
 			Requests: v1.ResourceList{
@@ -33,13 +33,13 @@ func (master *Master) newReplicaSet(name string, command []string, image string,
 	var volumes []v1.Volume
 	var volumeMounts []v1.VolumeMount
 
-	if len(master.JobDesc.WorkerDesc.Volumes) > 0 {
-		jsonStr, _ := json.Marshal(master.JobDesc.WorkerDesc.Volumes)
+	if len(w.config.Volumes) > 0 {
+		jsonStr, _ := json.Marshal(w.config.Volumes)
 		json.Unmarshal(jsonStr, &volumes)
 	}
 
-	if len(master.JobDesc.WorkerDesc.VolumeMounts) > 0 {
-		jsonStr, _ := json.Marshal(master.JobDesc.WorkerDesc.VolumeMounts)
+	if len(w.config.VolumeMounts) > 0 {
+		jsonStr, _ := json.Marshal(w.config.VolumeMounts)
 		json.Unmarshal(jsonStr, &volumeMounts)
 	}
 
@@ -61,7 +61,7 @@ func (master *Master) newReplicaSet(name string, command []string, image string,
 					Env: []v1.EnvVar{
 						v1.EnvVar{
 							Name:  "KMR_MASTER_ADDRESS",
-							Value: fmt.Sprintf("%s%s", master.JobName, master.port),
+							Value: fmt.Sprintf("%s%s", w.config.Name, "50051"),
 						},
 					},
 					VolumeMounts: volumeMounts,
@@ -88,36 +88,36 @@ func (master *Master) newReplicaSet(name string, command []string, image string,
 	return replicaSet
 }
 
-func (master *Master) createReplicaSet(replicaSet *v1beta1.ReplicaSet) (*v1beta1.ReplicaSet, error) {
-	return master.k8sclient.ExtensionsV1beta1().
-		ReplicaSets(master.namespace).Create(replicaSet)
+func (w *K8sWorkerCtl) createReplicaSet(replicaSet *v1beta1.ReplicaSet) (*v1beta1.ReplicaSet, error) {
+	return w.k8sclient.ExtensionsV1beta1().
+		ReplicaSets(w.config.Namespace).Create(replicaSet)
 }
 
-func (master *Master) replicaSetName(phase string, jobName string) string {
+func (w *K8sWorkerCtl) replicaSetName(phase string, jobName string) string {
 	return fmt.Sprintf("%s-%s", jobName, phase)
 }
 
-func (master *Master) startWorker(phase string) error {
-	var rs v1beta1.ReplicaSet
-	switch phase {
-	case mapPhase:
-		rs = master.newReplicaSet(master.replicaSetName(phase, master.JobName),
-			master.JobDesc.Map.Command, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
-	case reducePhase:
-		rs = master.newReplicaSet(master.replicaSetName(phase, master.JobName),
-			master.JobDesc.Reduce.Command, master.JobDesc.Reduce.Image, int32(master.JobDesc.Reduce.NWorker))
-	case mapreducePhase:
-		rs = master.newReplicaSet(master.replicaSetName(phase, master.JobName),
-			master.JobDesc.Command, master.JobDesc.Image, int32(master.JobDesc.NWorker))
-	}
-	_, err := master.createReplicaSet(&rs)
-	return err
+func (w *K8sWorkerCtl) startWorker(phase string) error {
+	// var rs v1beta1.ReplicaSet
+	// switch phase {
+	// case mapPhase:
+	// 	rs = w.newReplicaSet(w.replicaSetName(phase, w.Name),
+	// 		master.JobDesc.Map.Command, master.JobDesc.Map.Image, int32(master.JobDesc.Map.NWorker))
+	// case reducePhase:
+	// 	rs = w.newReplicaSet(master.replicaSetName(phase, master.JobName),
+	// 		master.JobDesc.Reduce.Command, master.JobDesc.Reduce.Image, int32(master.JobDesc.Reduce.NWorker))
+	// case mapreducePhase:
+	// 	rs = master.newReplicaSet(master.replicaSetName(phase, master.JobName),
+	// 		master.JobDesc.Command, master.JobDesc.Image, int32(master.JobDesc.NWorker))
+	// }
+	// _, err := master.createReplicaSet(&rs)
+	return nil
 }
-func (master *Master) killWorkers(phase string) error {
-	falseVal := false
+func (w *K8sWorkerCtl) killWorkers(phase string) error {
 
-	return master.k8sclient.ExtensionsV1beta1().ReplicaSets(master.namespace).
-		Delete(master.replicaSetName(phase, master.JobName), &metav1.DeleteOptions{
-			OrphanDependents: &falseVal,
-		})
+	return nil
+	// return master.k8sclient.ExtensionsV1beta1().ReplicaSets(master.namespace).
+	// 	Delete(master.replicaSetName(phase, master.JobName), &metav1.DeleteOptions{
+	// 		OrphanDependents: &falseVal,
+	// 	})
 }
