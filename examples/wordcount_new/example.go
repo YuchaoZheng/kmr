@@ -78,20 +78,20 @@ func main() {
 	wcmap := &wordCountMap{
 		mapred.MapperCommon{
 			mapred.TypeConverters{
-				InputKeyTypeConverter:    mapred.Int32{},
-				InputValueTypeConverter:  mapred.String{},
-				OutputKeyTypeConverter:   mapred.String{},
-				OutputValueTypeConverter: mapred.Uint32{},
+				InputKeyTypeConverter:    mapred.Int32,
+				InputValueTypeConverter:  mapred.String,
+				OutputKeyTypeConverter:   mapred.String,
+				OutputValueTypeConverter: mapred.Uint32,
 			},
 		},
 	}
 	wcreduce := &wordCountReduce{
 		mapred.ReducerCommon{
 			mapred.TypeConverters{
-				InputKeyTypeConverter:    mapred.Int32{},
-				InputValueTypeConverter:  mapred.String{},
-				OutputKeyTypeConverter:   mapred.String{},
-				OutputValueTypeConverter: mapred.Uint32{},
+				InputKeyTypeConverter:    mapred.Int32,
+				InputValueTypeConverter:  mapred.String,
+				OutputKeyTypeConverter:   mapred.String,
+				OutputValueTypeConverter: mapred.Uint32,
 			},
 		},
 	}

@@ -7,32 +7,38 @@ import (
 	"github.com/naturali/kmr/util/log"
 )
 
-// Int64 int64
-type Int64 struct{}
+// typeInt64 int64
+type typeInt64 struct{}
+var Int64 typeInt64
 
-// Uint64 uint64
-type Uint64 struct{}
+// typeUint64 uint64
+type typeUint64 struct{}
+var Uint64 typeUint64
 
-// String string
-type String struct{}
+// typeString string
+type typeString struct{}
+var String typeString
 
-// Bytes []byte
-type Bytes struct{}
+// typeBytes []byte
+type typeBytes struct{}
+var Bytes typeBytes
 
-// Int32 int32
-type Int32 struct{}
+// typeInt32 int32
+type typeInt32 struct{}
+var Int32 typeInt32
 
-// Uint32 uint32
-type Uint32 struct{}
+// typeUint32 uint32
+type typeUint32 struct{}
+var Uint32 typeUint32
 
-// TypeConverter Interface of both key and value
+// TypeConverter typeInterface of both key and value
 type TypeConverter interface {
 	FromBytes(b []byte) interface{}
 	ToBytes(v interface{}) []byte
 }
 
-// FromBytes get value of int64, little endian
-func (v Uint64) FromBytes(b []byte) interface{} {
+// FromtypeBytes get value of int64, little endian
+func (v typeUint64) FromtypeBytes(b []byte) interface{} {
 	if len(b) != 8 {
 		log.Fatalf("Convert %v failed", b)
 	} else {
@@ -42,7 +48,7 @@ func (v Uint64) FromBytes(b []byte) interface{} {
 }
 
 // ToBytes convert uint64 to bytes
-func (v Uint64) ToBytes(val interface{}) []byte {
+func (v typeUint64) ToBytes(val interface{}) []byte {
 	if res, ok := val.(uint64); ok {
 		b := make([]byte, 8)
 		binary.LittleEndian.PutUint64(b, res)
@@ -52,8 +58,8 @@ func (v Uint64) ToBytes(val interface{}) []byte {
 	return nil
 }
 
-// FromBytes get value of int64, little endian
-func (v Int64) FromBytes(b []byte) interface{} {
+// FromtypeBytes get value of int64, little endian
+func (v typeInt64) FromtypeBytes(b []byte) interface{} {
 	if len(b) != 8 {
 		log.Fatalf("Convert %v failed", b)
 	} else {
@@ -67,7 +73,7 @@ func (v Int64) FromBytes(b []byte) interface{} {
 }
 
 // ToBytes convert int64 to bytes
-func (v Int64) ToBytes(val interface{}) []byte {
+func (v typeInt64) ToBytes(val interface{}) []byte {
 	if res, ok := val.(int64); ok {
 		b := make([]byte, 8)
 		binary.Write(bytes.NewBuffer(b), binary.LittleEndian, res)
@@ -77,13 +83,13 @@ func (v Int64) ToBytes(val interface{}) []byte {
 	return nil
 }
 
-// FromBytes convert bytes to string
-func (s String) FromBytes(b []byte) interface{} {
+// FromtypeBytes convert bytes to string
+func (s typeString) FromBytes(b []byte) interface{} {
 	return string(b)
 }
 
 // ToBytes convert string to bytes
-func (s String) ToBytes(str interface{}) []byte {
+func (s typeString) ToBytes(str interface{}) []byte {
 	if res, ok := str.(string); ok {
 		return []byte(res)
 	}
@@ -91,13 +97,13 @@ func (s String) ToBytes(str interface{}) []byte {
 	return nil
 }
 
-// FromBytes return bytes slice
-func (bs Bytes) FromBytes(b []byte) interface{} {
+// FromtypeBytes return bytes slice
+func (bs typeBytes) FromBytes(b []byte) interface{} {
 	return b[:]
 }
 
 // ToBytes return bytes self
-func (bs Bytes) ToBytes(b interface{}) []byte {
+func (bs typeBytes) ToBytes(b interface{}) []byte {
 	if res, ok := b.([]byte); ok {
 		return res
 	}
@@ -105,8 +111,8 @@ func (bs Bytes) ToBytes(b interface{}) []byte {
 	return nil
 }
 
-// FromBytes int32 to bytes
-func (Int32) FromBytes(b []byte) interface{} {
+// FromtypeBytes int32 to bytes
+func (typeInt32) FromBytes(b []byte) interface{} {
 	if len(b) != 4 {
 		log.Fatalf("Convert %v failed", b)
 	} else {
@@ -120,7 +126,7 @@ func (Int32) FromBytes(b []byte) interface{} {
 }
 
 // ToBytes bytes to int32
-func (Int32) ToBytes(val interface{}) []byte {
+func (typeInt32) ToBytes(val interface{}) []byte {
 	if res, ok := val.(int32); ok {
 		wt := new(bytes.Buffer)
 		binary.Write(wt, binary.LittleEndian, res)
@@ -130,8 +136,8 @@ func (Int32) ToBytes(val interface{}) []byte {
 	return nil
 }
 
-// FromBytes uint32 to bytes
-func (Uint32) FromBytes(b []byte) interface{} {
+// FromtypeBytes uint32 to bytes
+func (typeUint32) FromBytes(b []byte) interface{} {
 	if len(b) != 4 {
 		log.Fatalf("Convert %v failed", b)
 	} else {
@@ -145,7 +151,7 @@ func (Uint32) FromBytes(b []byte) interface{} {
 }
 
 // ToBytes bytes to int32
-func (Uint32) ToBytes(val interface{}) []byte {
+func (typeUint32) ToBytes(val interface{}) []byte {
 	if res, ok := val.(uint32); ok {
 		wt := new(bytes.Buffer)
 		binary.Write(wt, binary.LittleEndian, res)
