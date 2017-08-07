@@ -83,6 +83,7 @@ func (master *Master) CheckHeartbeatForEachWorker(task *Task, workerID int64, he
 		 select {
 		 case <-timeout:
 		 	// the worker fuck up, release the task
+			log.Error("Worker: ",workerID, "fuck up")
 		 	master.Lock()
 		 	 if task.state == StateInProgress {
 		 	 	delete(task.workers, workerID)
@@ -313,9 +314,11 @@ func NewMaster(port string, workerCtl WorkerCtl, namespace string, workerNum int
 		}
 	}()
 	m.heartbeat = make(map[int64]chan int)
-	err := workerCtl.StartWorkers(workerNum)
-	if err != nil {
-		log.Fatalf("cant't start worker: %v", err)
+	if workerCtl != nil {
+		err := workerCtl.StartWorkers(workerNum)
+		if err != nil {
+			log.Fatalf("cant't start worker: %v", err)
+		}
 	}
 	return m
 }

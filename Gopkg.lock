@@ -152,6 +152,12 @@
   revision = "5b9ff866471762aa2ab2dced63c9fb6f53921342"
 
 [[projects]]
+  name = "github.com/magiconair/properties"
+  packages = ["assert"]
+  revision = "be5ece7dd465ab0765a9682137865547526d1dfb"
+  version = "v1.7.3"
+
+[[projects]]
   branch = "master"
   name = "github.com/mailru/easyjson"
   packages = ["buffer","jlexer","jwriter"]
@@ -162,6 +168,12 @@
   name = "github.com/mitchellh/mapstructure"
   packages = ["."]
   revision = "d0303fe809921458f417bcf828397a65db30a7e4"
+
+[[projects]]
+  branch = "master"
+  name = "github.com/reusee/mmh3"
+  packages = ["."]
+  revision = "64b85163255bbb6af4f0d0eab61ecdda7ea7cd96"
 
 [[projects]]
   name = "github.com/satori/uuid"
@@ -180,6 +192,12 @@
   name = "github.com/ugorji/go"
   packages = ["codec"]
   revision = "5efa3251c7f7d05e5d9704a69a984ec9f1386a40"
+
+[[projects]]
+  name = "github.com/urfave/cli"
+  packages = ["."]
+  revision = "0bdeddeeb0f650497d603c4ad7b20cfe685682f6"
+  version = "v1.19.1"
 
 [[projects]]
   branch = "master"
@@ -238,6 +256,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "f8644d469753faf27ed73be0f8280d0c3f939db8f923d676192a60849280480d"
+  inputs-digest = "6096fa6b02f8dcffae86dbb4d3858d5e5c2b3e5454386e772d593e9c525db742"
   solver-name = "gps-cdcl"
   solver-version = 1

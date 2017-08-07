@@ -3,7 +3,7 @@ package master
 type WorkerCtl interface {
 	InspectWorker(workernum int) string
 	StartWorkers(num int) error
-	StopWorkers()
+	StopWorkers() error
 	GetWorkerNum() int
 }
 

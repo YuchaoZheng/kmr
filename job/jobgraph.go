@@ -2,7 +2,6 @@ package job
 
 import (
 	"sync"
-	"flag"
 	"fmt"
 	"math/rand"
 	"os"
@@ -12,18 +11,24 @@ import (
 	"github.com/naturali/kmr/mapred"
 	"github.com/naturali/kmr/master"
 	"github.com/naturali/kmr/util/log"
-)
 
-var (
-	randomSeed  = flag.Int64("seed", int64(time.Now().Nanosecond()), "The random seed for master and workers")
-	workerNum   = flag.Int("worker-num", 16, "How many worker you want to start")
-	workerIDCmd = flag.Int64("worker-id", int64(-1), "Define it if it is worker")
+	"github.com/urfave/cli"
+	"path"
+	"os/user"
+	"k8s.io/client-go/rest"
+	"net"
+	"strconv"
+	"encoding/json"
+	"io/ioutil"
+	"github.com/naturali/kmr/util"
+	"path/filepath"
+	"errors"
 )
 
 // TODO: Get workerID and master addr from argument
 var (
 	workerIDs  []int64
-	masterAddr = "localhost:50051"
+	workerIDMap = make(map[int64]int)
 )
 
 type mapredNode struct {
@@ -147,9 +152,9 @@ type JobGraph struct {
 
 	Name   string
 	master *master.Master
-	config *JobConfig
 
 	mapBucket, interBucket, reduceBucket bucket.Bucket
+	workerNum int
 }
 
 func (j *JobGraph) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *jobNode {
@@ -339,27 +344,12 @@ func (j *JobGraph) handleArguments() error {
 	return nil
 }
 
-func (j *JobGraph) runMaster() {
-	var workerctl master.WorkerCtl
-	port := "50051"
-	//TODO: assign a proper workerctl
-	workerctl = NewLocalWorkerCtl(j)
-
+func (j *JobGraph) runMaster(workerctl master.WorkerCtl, port string) {
 	if len(j.Name) == 0 {
 		j.Name = "Anonymous KMR Job"
 	}
 
-	if j.config.WorkerNum == 0 {
-		for _, node := range j.root {
-			j.config.WorkerNum += len(node.startNode.inputFiles.GetFiles())
-		}
-		if j.config.WorkerNum == 0 {
-			//XXX: Why no inputs?
-			j.config.WorkerNum = 3
-		}
-	}
-
-	m := master.NewMaster(port, workerctl, j.Name, j.config.WorkerNum)
+	m := master.NewMaster(port, workerctl, j.Name, j.workerNum)
 	j.master = m
 
 	waitForAll := &sync.WaitGroup{}
@@ -443,40 +433,38 @@ func (node *mapredNode) isIntermediaNode() bool {
 	return isIntermediaNode
 }
 
-func (j *JobGraph) Run() {
-	flag.Parse()
-	//TODO: Check arguments to
-	//判断是master还是worker
-
-	rand.Seed(*randomSeed)
-
-	//TODO Read from argument and file
-	bk := BucketDescription{
-		BucketType: "filesystem",
-		Config: map[string]interface{}{
-			"directory": "/tmp/kmrtest",
-		},
-	}
-
-	j.config = &JobConfig{
-		bk,
-		bk,
-		bk,
-		*workerNum,
-	}
-
+func (j *JobGraph) loadBucket(m, i, r *BucketDescription) {
 	var err1, err2, err3 error
-	j.mapBucket, err1 = bucket.NewBucket(j.config.mapBucket.BucketType, j.config.mapBucket.Config)
-	j.interBucket, err2 = bucket.NewBucket(j.config.interBucket.BucketType, j.config.interBucket.Config)
-	j.reduceBucket, err3 = bucket.NewBucket(j.config.reduceBucket.BucketType, j.config.reduceBucket.Config)
+	j.mapBucket, err1 = bucket.NewBucket(m.BucketType, m.Config)
+	j.interBucket, err2 = bucket.NewBucket(i.BucketType, i.Config)
+	j.reduceBucket, err3 = bucket.NewBucket(r.BucketType, r.Config)
 
 	if err1 != nil || err2 != nil || err3 != nil {
 		log.Fatal("Falied to create bucket", err1, err2, err3)
 	}
+}
 
-	workerIDs = make([]int64, j.config.WorkerNum)
-	workerIDMap := make(map[int64]int)
-	for i := 0; i < j.config.WorkerNum; i++ {
+func (j *JobGraph) loadFromLocalConfig(config *LocalConfig) {
+	if config.MapBucket == nil || config.ReduceBucket == nil || config.InterBucket == nil {
+		log.Fatal("Lack bucket config")
+	}
+	j.loadBucket(config.MapBucket, config.InterBucket, config.ReduceBucket)
+}
+
+func (j *JobGraph) loadFromRemoteConfig(config *RemoteConfig) {
+	if config.MapBucket == nil || config.ReduceBucket == nil || config.InterBucket == nil {
+		log.Fatal("Lack bucket config")
+	}
+	j.loadBucket(config.MapBucket, config.InterBucket, config.ReduceBucket)
+}
+
+func (j* JobGraph) initWorkerIDs(num int, seed int64) {
+	var finalSeed int64
+	fmt.Sscanf(fmt.Sprintf("%v%v", num, seed), "%v", &finalSeed)
+	rand.Seed(finalSeed)
+	j.workerNum = num
+	workerIDs = make([]int64, j.workerNum)
+	for i := 0; i < j.workerNum; i++ {
 		randWorkerID := rand.Int63()
 		// Ensure it is unique
 		for {
@@ -489,22 +477,300 @@ func (j *JobGraph) Run() {
 		workerIDMap[randWorkerID] = 1
 		workerIDs[i] = randWorkerID
 	}
+}
 
-	j.ValidateGraph()
-
-	if *workerIDCmd >= 0 {
-		if _, ok := workerIDMap[*workerIDCmd]; !ok {
-			log.Fatal("worker id", *workerIDCmd, "doesn't exists given seed", *randomSeed)
-		}
-		w := worker{
-			j,
-			*workerIDCmd,
-			60,
-		}
-		w.runWorker()
-	} else {
-		j.runMaster()
+func (j *JobGraph) Run() {
+	usr, err := user.Current()
+	if err != nil {
+		log.Fatal(err)
 	}
+	configFiles := []string {
+		"/etc/kmr/config.json",
+		path.Join(usr.HomeDir, ".config/kmr/config.json"),
+		"./config.json",
+	}
+	var config *Config
+
+	app := cli.NewApp()
+	app.Name = j.Name
+	app.Description = "A KMR application named " + j.Name
+	app.Author = "Naturali"
+	app.Version = "0.0.1"
+	app.Flags = []cli.Flag {
+		cli.StringSliceFlag{
+			Name:"config",
+			Usage:"Load config from `FILES`",
+		},
+		cli.Int64Flag{
+			Name: "random-seed",
+			Value: time.Now().Unix(),
+			Usage: "Used to synchronize information between workers and master",
+		},
+	}
+	app.Before = func(c *cli.Context) error {
+		config = j.loadConfigFromMultiFiles(append(configFiles, c.StringSlice("config")...)...)
+		j.ValidateGraph()
+		return nil
+	}
+
+	app.Commands = []cli.Command {
+		{
+			Name: "master",
+			Flags: []cli.Flag{
+				cli.BoolFlag{
+					Name: "remote",
+					Usage: "Run on kubernetes",
+				},
+				cli.IntFlag{
+					Name:"port",
+					Value:50051,
+					Usage:"Define how many workers",
+				},
+				cli.IntFlag{
+					Name:"worker-num",
+					Value:1,
+					Usage:"Define how many workers",
+				},
+				cli.BoolFlag{
+					Name: "listen-only",
+					Usage: "Listen and waiting for workers",
+				},
+				cli.IntFlag{
+					Name: "cpu-limit",
+					Value: 1,
+					Usage: "Define worker cpu limit when run in k8s",
+				},
+			},
+			Before: func(ctx *cli.Context) error {
+				workerNum := ctx.Int("worker-num")
+				j.initWorkerIDs(workerNum, ctx.GlobalInt64("random-seed"))
+				return nil
+			},
+			Action: func(ctx *cli.Context) error {
+				var workerCtl master.WorkerCtl
+				seed := ctx.GlobalInt64("random-seed")
+				if ctx.Bool("remote") {
+					j.loadFromRemoteConfig(config.Remote)
+
+					var k8sconfig *rest.Config
+
+					k8sSchema := os.Getenv("KUBERNETES_API_SCHEMA")
+					if k8sSchema != "http" { // InCluster
+						k8sconfig, err = rest.InClusterConfig()
+						if err != nil {
+							log.Fatalf("Can't get incluster config, %v", err)
+						}
+					} else { // For debug usage. > source dev_environment.sh
+						host := os.Getenv("KUBERNETES_SERVICE_HOST")
+						port := os.Getenv("KUBERNETES_SERVICE_PORT")
+
+						k8sconfig = &rest.Config{
+							Host: fmt.Sprintf("%s://%s", k8sSchema, net.JoinHostPort(host, port)),
+						}
+						token := os.Getenv("KUBERNETES_API_ACCOUNT_TOKEN")
+						if len(token) > 0 {
+							k8sconfig.BearerToken = token
+						}
+					}
+					workerCtl = master.NewK8sWorkerCtl(&master.K8sWorkerConfig{
+							Name: j.Name,
+							CPULimit: "1",
+							Namespace: *config.Remote.Namespace,
+							K8sConfig: *k8sconfig,
+							WorkerNum: ctx.Int("worker-num"),
+							Volumes: *config.Remote.PodDesc.Volumes,
+							VolumeMounts: *config.Remote.PodDesc.VolumeMounts,
+							WorkerIDs: workerIDs,
+							RandomSeed: seed,
+						})
+				} else {
+					j.loadFromLocalConfig(config.Local)
+					workerCtl = NewLocalWorkerCtl(j, ctx.Int("port"))
+				}
+
+				if ctx.Bool("listen-only") {
+					workerCtl = nil
+					fmt.Println("Listen only mode")
+					fmt.Println("Seed: ", seed)
+					fmt.Println("WorkerIDs: ")
+					for _, id := range workerIDs {
+						fmt.Println(id)
+					}
+					fmt.Println("Use following command to start a worker")
+					for _, id := range workerIDs {
+						fmt.Println(os.Args[0], "--random-seed", seed,
+						"worker", "--worker-id", id, "--worker-num", j.workerNum)
+					}
+				}
+
+				j.runMaster(workerCtl, strconv.Itoa(ctx.Int("port")))
+				return nil
+			},
+		},
+		{
+			Name: "worker",
+			Flags: []cli.Flag{
+				cli.Int64Flag{
+					Name:"worker-id",
+					Usage: "Define worker's ID",
+				},
+				cli.StringFlag{
+					Name: "master-addr",
+					Value: "localhost:50051",
+					Usage: "Master's address, format: \"HOSTNAME:PORT\"",
+				},
+				cli.IntFlag{
+					Name:"worker-num",
+					Value:1,
+					Usage:"Define how many workers",
+				},
+				cli.BoolFlag{
+					Name: "local",
+					Usage: "This worker will read local config",
+				},
+			},
+			Usage: "Run in remote worker mode, this will read remote config items",
+			Before: func(ctx *cli.Context) error {
+				workerNum := ctx.Int("worker-num")
+				j.initWorkerIDs(workerNum, ctx.GlobalInt64("random-seed"))
+				return nil
+			},
+			Action: func(ctx *cli.Context) error {
+				workerID := ctx.Int64("worker-id")
+				if _, ok := workerIDMap[workerID]; !ok {
+					return cli.NewExitError(
+						fmt.Sprintln("worker id", workerID ,
+							"doesn't exists given seed",
+							ctx.GlobalInt64("random-seed"), workerIDMap), -1)
+				}
+				if ctx.Bool("local") {
+					j.loadFromLocalConfig(config.Local)
+				} else {
+					j.loadFromRemoteConfig(config.Remote)
+				}
+				w := worker{
+					j,
+					workerID,
+					60,
+					ctx.String("master-addr"),
+				}
+				w.runWorker()
+				return nil
+			},
+		},
+		{
+			Name: "deploy",
+			Flags: []cli.Flag{
+				cli.IntFlag{
+					Name:"port",
+					Value:50051,
+					Usage:"Define how many workers",
+				},
+				cli.IntFlag{
+					Name:"worker-num",
+					Value:1,
+					Usage:"Define how many workers",
+				},
+				cli.IntFlag{
+					Name: "cpu-limit",
+					Value: 1,
+					Usage: "Define worker cpu limit when run in k8s",
+				},
+				cli.StringSliceFlag{
+					Name: "image-tags",
+					Value: &cli.StringSlice{"kmr"},
+				},
+				cli.StringFlag{
+					Name: "asset-folder",
+					Value: "./assets",
+					Usage: "Files under asset folder will be packed into docker image. " +
+						"KMR APP can use this files as they are under './'",
+				},
+			},
+			Usage: "Deploy KMR Application in k8s",
+			Action: func(ctx *cli.Context) error {
+				dockerWorkDir := "/kmrapp"
+				// collect files under current folder
+				assetFolder, err := filepath.Abs(ctx.String("asset-folder"))
+				if err != nil {
+					return err
+				}
+				if f, err := os.Stat(assetFolder); err != nil || !f.IsDir() {
+					if os.IsNotExist(err) {
+						err := os.MkdirAll(assetFolder, 0777)
+						if err != nil {
+							return cli.NewMultiError(err)
+						}
+						defer os.RemoveAll(assetFolder)
+					} else {
+						return cli.NewExitError("Asset folder " + assetFolder + " is incorrect", 1)
+					}
+				}
+				log.Info("Asset folder is", assetFolder)
+
+				configFilePath := path.Join(assetFolder, "internal-used-config.json")
+				executablePath := path.Join(assetFolder, "internal-used-executable")
+
+				if _, err := os.Stat(configFilePath); err == nil {
+					return cli.NewExitError(configFilePath + "should not exists", 1)
+				}
+				if _, err := os.Stat(executablePath); err == nil {
+					return cli.NewExitError(executablePath + "should not exists", 1)
+				}
+
+				configJson, err := json.MarshalIndent(config, "", "\t")
+				if err != nil {
+					return err
+				}
+				err = ioutil.WriteFile(configFilePath, configJson,0666)
+				defer os.Remove(configFilePath)
+				if err != nil {
+					return err
+				}
+
+				//TODO Use Ermine to pack executable and dynamic library
+				exe, err1 := os.Executable()
+				exe, err2 := filepath.EvalSymlinks(exe)
+				if err1 != nil || err2 != nil {
+					return cli.NewMultiError(errors.New("cannot locate executable"), err1, err2)
+				}
+				os.Link(exe, executablePath)
+				defer os.Remove(executablePath)
+
+
+				tags := ctx.StringSlice("image-tags")
+				if len(tags) == 0 {
+					tags = append(tags, j.Name + ":" + "latest")
+				}
+
+				files, err := filepath.Glob(assetFolder+"/*")
+				if err != nil {
+					return err
+				}
+
+				imageName, err := util.CreateDockerImage( *config.Remote.DockerRegistry, tags, files, dockerWorkDir)
+				if err != nil {
+					return err
+				}
+
+				pod, service, err := util.CreateK8sKMRJob(j.Name,
+					*config.Remote.ServiceAccount,
+					*config.Remote.Namespace,
+					*config.Remote.PodDesc, imageName, dockerWorkDir,
+					[]string{},
+					int32(ctx.Int("port")))
+
+				if err != nil {
+					return cli.NewMultiError(err)
+				}
+				log.Info("Pod: ", pod, "Service: ", service)
+				return nil
+			},
+		},
+	}
+
+	app.Run(os.Args)
+	os.Exit(0)
 }
 
 func (j *JobGraph) getMapredNode(jobNodeName string, mapredIndex int) *mapredNode {

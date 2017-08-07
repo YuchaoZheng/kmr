@@ -1,0 +1,61 @@
+{
+  "local": {
+    "mapBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/"
+      }
+    },
+    "interBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/tmp/"
+      }
+    },
+    "reduceBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/tmp/"
+      }
+    }
+  },
+  "remote": {
+    "podDescription": {
+      "volumeMounts": [
+        {
+          "name": "cephfs",
+          "mountPath": "/cephfs"
+        }
+      ],
+      "volumes": [
+        {
+          "name": "cephhfs",
+          "hostPath": {
+            "path": "/mnt/cephfs"
+          }
+        }
+      ]
+    },
+    "mapBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/"
+      }
+    },
+    "interBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/tmp/"
+      }
+    },
+    "reduceBucket": {
+      "bucketType": "filesystem",
+      "config": {
+        "directory": "/tmp/"
+      }
+    },
+    "dockerRegistry": "r.fds.so:5000",
+    "namespace": "kmr",
+    "serviceAccount": "kmr-master",
+  }
+}

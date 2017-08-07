@@ -23,13 +23,14 @@ type worker struct {
 	jobGraph *JobGraph
 	workerID int64
 	flushOutSize int
+	masterAddr string
 }
 
 func (w *worker) runWorker() {
 	//Here we must know the master address
 	var retcode kmrpb.ReportInfo_ErrorCode
 
-	cc, err := grpc.Dial(masterAddr, grpc.WithInsecure())
+	cc, err := grpc.Dial(w.masterAddr, grpc.WithInsecure())
 	if err != nil {
 		log.Fatal("cannot connect to master", err)
 	}
