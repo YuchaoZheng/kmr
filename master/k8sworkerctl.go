@@ -25,6 +25,7 @@ type K8sWorkerConfig struct {
 	WorkerNum int
 	WorkerIDs []int64
 	RandomSeed int64
+	Command []string
 }
 
 type K8sWorkerCtl struct {
@@ -114,8 +115,8 @@ func (w *K8sWorkerCtl) createReplicaSet(replicaSet *v1beta1.ReplicaSet) (*v1beta
 		ReplicaSets(w.config.Namespace).Create(replicaSet)
 }
 
-func (w *K8sWorkerCtl) replicaSetName(phase string, jobName string) string {
-	return fmt.Sprintf("%s-%s", jobName, phase)
+func (w *K8sWorkerCtl) replicaSetName(jobName string) string {
+	return fmt.Sprintf("%s", jobName)
 }
 
 func (w *K8sWorkerCtl) InspectWorker(workernum int) string {
@@ -123,18 +124,16 @@ func (w *K8sWorkerCtl) InspectWorker(workernum int) string {
 }
 
 func (w *K8sWorkerCtl) StartWorkers(num int) error {
-	phase := "mr"
 	var rs v1beta1.ReplicaSet
-	rs = w.newReplicaSet(w.replicaSetName(phase, w.config.Name),
-		[]string{w.config.BinaryPath}, w.config.Image, int32(w.config.WorkerNum))
+	rs = w.newReplicaSet(w.replicaSetName(w.config.Name),
+		w.config.Command, w.config.Image, int32(w.config.WorkerNum))
 	_, err := w.createReplicaSet(&rs)
 	return err
 }
 func (w *K8sWorkerCtl) StopWorkers() error {
-	phase := "mr"
 	falseVal := false
 	return w.k8sclient.ExtensionsV1beta1().ReplicaSets(w.config.Namespace).
-		Delete(w.replicaSetName(phase, w.config.Name), &metav1.DeleteOptions{
+		Delete(w.replicaSetName(w.config.Name), &metav1.DeleteOptions{
 		OrphanDependents: &falseVal,
 	})
 }

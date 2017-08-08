@@ -14,7 +14,6 @@ import (
 
 	"github.com/urfave/cli"
 	"path"
-	"os/user"
 	"k8s.io/client-go/rest"
 	"net"
 	"strconv"
@@ -23,6 +22,8 @@ import (
 	"github.com/naturali/kmr/util"
 	"path/filepath"
 	"errors"
+	"strings"
+	"unicode"
 )
 
 // TODO: Get workerID and master addr from argument
@@ -30,6 +31,13 @@ var (
 	workerIDs  []int64
 	workerIDMap = make(map[int64]int)
 )
+
+const (
+	jobNodeIdle = iota
+	jobNodeProcessing
+	jobNodeCompleted
+)
+
 
 type mapredNode struct {
 	index   int
@@ -46,89 +54,6 @@ type mapredNode struct {
 	chainPrev, chainNext *mapredNode
 }
 
-type interFileNameGenerator struct {
-	mrNode *mapredNode
-}
-
-func (i *interFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
-	if i.mrNode == nil {
-		log.Fatal("mrNode is not set")
-	}
-	nMappers := (len(i.mrNode.inputFiles.GetFiles()) + i.mrNode.mapperBatchSize - 1) / i.mrNode.mapperBatchSize
-	nReducer := i.mrNode.reducerCount
-	if !(reducerIdx >= 0 && reducerIdx < nReducer) {
-		log.Fatal("SubIdx is error", reducerIdx, "when get reducer output files for job", i.mrNode.jobNode.name)
-	}
-	if !(mapperIdx >= 0 && mapperIdx < nMappers) {
-		log.Fatal("SubIdx is error", mapperIdx, "when get mapper output files for job", i.mrNode.jobNode.name)
-	}
-	return fmt.Sprintf("inter-%v-%v-%v", i.mrNode.jobNode.name, i.mrNode.index, mapperIdx*nReducer+reducerIdx)
-}
-
-func (i *interFileNameGenerator) getMapperOutputFiles(mapperIdx int) []string {
-	if i.mrNode == nil {
-		log.Fatal("mrNode is not set")
-	}
-	res := make([]string, i.mrNode.reducerCount)
-	for reducerIdx := range res {
-		res[reducerIdx] = i.getFile(mapperIdx, reducerIdx)
-	}
-	return res
-}
-
-func (i *interFileNameGenerator) getReducerInputFiles(reducerIdx int) []string {
-	if i.mrNode == nil {
-		log.Fatal("mrNode is not set")
-	}
-	nMappers := (len(i.mrNode.inputFiles.GetFiles()) + i.mrNode.mapperBatchSize - 1) / i.mrNode.mapperBatchSize
-	res := make([]string, nMappers)
-	for mapperIdx := range res {
-		res[mapperIdx] = i.getFile(mapperIdx, reducerIdx)
-	}
-	return res
-}
-
-type Files interface {
-	GetFiles() []string
-	GetType() string
-}
-
-type InputFiles struct {
-	Files []string
-	Type  string
-}
-
-func (f *InputFiles) GetFiles() []string {
-	return f.Files
-}
-
-func (f *InputFiles) GetType() string {
-	return f.Type
-}
-
-type fileNameGenerator struct {
-	mrNode    *mapredNode
-	fileCount int
-}
-
-func (f *fileNameGenerator) GetFiles() []string {
-	res := make([]string, f.fileCount)
-	for i := range res {
-		res[i] = fmt.Sprintf("output-%v-%v-%v", f.mrNode.jobNode.name, f.mrNode.index, i)
-	}
-	return res
-}
-
-func (f *fileNameGenerator) GetType() string {
-	return "stream"
-}
-
-const (
-	jobNodeIdle = iota
-	jobNodeProcessing
-	jobNodeCompleted
-)
-
 type jobNode struct {
 	sync.Mutex
 	name                       string
@@ -138,11 +63,6 @@ type jobNode struct {
 	graph                      *JobGraph
 
 	currentProcessingNode *mapredNode
-}
-
-type JobConfig struct {
-	mapBucket, interBucket, reduceBucket BucketDescription
-	WorkerNum                            int
 }
 
 type JobGraph struct {
@@ -157,30 +77,11 @@ type JobGraph struct {
 	workerNum int
 }
 
-func (j *JobGraph) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *jobNode {
-	if len(batchSize) == 0 {
-		batchSize = append(batchSize, 1)
-	}
-	jnode := &jobNode{
-		graph: j,
-	}
-	mrnode := &mapredNode{
-		index:           j.mapredNodeIdx,
-		jobNode:         jnode,
-		mapper:          mapper,
-		inputFiles:      inputs,
-		mapperBatchSize: batchSize[0],
-	}
-	j.mapredNodeIdx++
-	jnode.startNode = mrnode
-	jnode.endNode = mrnode
-	mrnode.outputFiles = &fileNameGenerator{mrnode, 0}
-	mrnode.interFiles.mrNode = mrnode
-
-	j.root = append(j.root, jnode)
-	j.allNodes = append(j.allNodes, mrnode)
-	return jnode
+func (node *mapredNode) isIntermediaNode() bool {
+	isIntermediaNode := node != node.jobNode.endNode && node.jobNode.startNode != node.jobNode.endNode
+	return isIntermediaNode
 }
+
 
 func (n *jobNode) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *jobNode {
 	if len(batchSize) == 0 {
@@ -205,33 +106,6 @@ func (n *jobNode) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int
 		n.endNode.mapper = mapred.CombineMappers(n.endNode.mapper, mapper)
 	}
 	return n
-}
-
-func (j *JobGraph) AddReducer(reducer mapred.Reducer, inputs Files, num int) *jobNode {
-	if num <= 0 {
-		num = 1
-	}
-	jnode := &jobNode{
-		graph: j,
-	}
-	mrnode := &mapredNode{
-		index:           j.mapredNodeIdx,
-		jobNode:         jnode,
-		mapper:          mapred.IdentityMapper,
-		reducer:         reducer,
-		inputFiles:      inputs,
-		mapperBatchSize: 1,
-	}
-	j.mapredNodeIdx++
-	jnode.startNode = mrnode
-	jnode.endNode = mrnode
-	mrnode.outputFiles = &fileNameGenerator{mrnode, num}
-	mrnode.interFiles.mrNode = mrnode
-	mrnode.reducerCount = num
-
-	j.root = append(j.root, jnode)
-	j.allNodes = append(j.allNodes, mrnode)
-	return jnode
 }
 
 func (n *jobNode) AddReducer(reducer mapred.Reducer, num int) *jobNode {
@@ -273,6 +147,58 @@ func (n *jobNode) DependOn(nodes ...*jobNode) *jobNode {
 		node.dependencyOf = append(node.dependencyOf, n)
 	}
 	return n
+}
+
+func (j *JobGraph) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *jobNode {
+	if len(batchSize) == 0 {
+		batchSize = append(batchSize, 1)
+	}
+	jnode := &jobNode{
+		graph: j,
+	}
+	mrnode := &mapredNode{
+		index:           j.mapredNodeIdx,
+		jobNode:         jnode,
+		mapper:          mapper,
+		inputFiles:      inputs,
+		mapperBatchSize: batchSize[0],
+	}
+	j.mapredNodeIdx++
+	jnode.startNode = mrnode
+	jnode.endNode = mrnode
+	mrnode.outputFiles = &fileNameGenerator{mrnode, 0}
+	mrnode.interFiles.mrNode = mrnode
+
+	j.root = append(j.root, jnode)
+	j.allNodes = append(j.allNodes, mrnode)
+	return jnode
+}
+
+func (j *JobGraph) AddReducer(reducer mapred.Reducer, inputs Files, num int) *jobNode {
+	if num <= 0 {
+		num = 1
+	}
+	jnode := &jobNode{
+		graph: j,
+	}
+	mrnode := &mapredNode{
+		index:           j.mapredNodeIdx,
+		jobNode:         jnode,
+		mapper:          mapred.IdentityMapper,
+		reducer:         reducer,
+		inputFiles:      inputs,
+		mapperBatchSize: 1,
+	}
+	j.mapredNodeIdx++
+	jnode.startNode = mrnode
+	jnode.endNode = mrnode
+	mrnode.outputFiles = &fileNameGenerator{mrnode, num}
+	mrnode.interFiles.mrNode = mrnode
+	mrnode.reducerCount = num
+
+	j.root = append(j.root, jnode)
+	j.allNodes = append(j.allNodes, mrnode)
+	return jnode
 }
 
 // ValidateGraph validate the graph to ensure it can be excuted
@@ -345,10 +271,6 @@ func (j *JobGraph) handleArguments() error {
 }
 
 func (j *JobGraph) runMaster(workerctl master.WorkerCtl, port string) {
-	if len(j.Name) == 0 {
-		j.Name = "Anonymous KMR Job"
-	}
-
 	m := master.NewMaster(port, workerctl, j.Name, j.workerNum)
 	j.master = m
 
@@ -428,11 +350,6 @@ func (j *JobGraph) convertNodeToJobDesc(node *mapredNode) *master.JobDescription
 	}
 }
 
-func (node *mapredNode) isIntermediaNode() bool {
-	isIntermediaNode := node != node.jobNode.endNode && node.jobNode.startNode != node.jobNode.endNode
-	return isIntermediaNode
-}
-
 func (j *JobGraph) loadBucket(m, i, r *BucketDescription) {
 	var err1, err2, err3 error
 	j.mapBucket, err1 = bucket.NewBucket(m.BucketType, m.Config)
@@ -458,6 +375,15 @@ func (j *JobGraph) loadFromRemoteConfig(config *RemoteConfig) {
 	j.loadBucket(config.MapBucket, config.InterBucket, config.ReduceBucket)
 }
 
+func (j *JobGraph) getMapredNode(jobNodeName string, mapredIndex int) *mapredNode {
+	for _, node := range j.allNodes {
+		if node.jobNode.name == jobNodeName && node.index == mapredIndex {
+			return node
+		}
+	}
+	return nil
+}
+
 func (j* JobGraph) initWorkerIDs(num int, seed int64) {
 	var finalSeed int64
 	fmt.Sscanf(fmt.Sprintf("%v%v", num, seed), "%v", &finalSeed)
@@ -480,13 +406,19 @@ func (j* JobGraph) initWorkerIDs(num int, seed int64) {
 }
 
 func (j *JobGraph) Run() {
-	usr, err := user.Current()
-	if err != nil {
-		log.Fatal(err)
+	if len(j.Name) == 0 {
+		j.Name = "anonymous-kmr-job"
 	}
+	for _, c := range []rune(j.Name) {
+		if !unicode.IsLower(c) || c == rune('-') {
+			log.Fatal("Job name should only contain lowercase and '-'")
+		}
+	}
+
+	var err error
+
 	configFiles := []string {
 		"/etc/kmr/config.json",
-		path.Join(usr.HomeDir, ".config/kmr/config.json"),
 		"./config.json",
 	}
 	var config *Config
@@ -503,8 +435,9 @@ func (j *JobGraph) Run() {
 		},
 		cli.Int64Flag{
 			Name: "random-seed",
-			Value: time.Now().Unix(),
+			Value: time.Now().UnixNano(),
 			Usage: "Used to synchronize information between workers and master",
+			Hidden: true,
 		},
 	}
 	app.Before = func(c *cli.Context) error {
@@ -540,6 +473,16 @@ func (j *JobGraph) Run() {
 					Value: 1,
 					Usage: "Define worker cpu limit when run in k8s",
 				},
+				cli.StringFlag{
+					Name: "image-name",
+					Usage: "Worker docker image name used in remote mode",
+					Hidden: true,
+				},
+				cli.StringFlag{
+					Name: "service-name",
+					Usage: "k8s service name used in remote mode",
+					Hidden: true,
+				},
 			},
 			Before: func(ctx *cli.Context) error {
 				workerNum := ctx.Int("worker-num")
@@ -572,17 +515,30 @@ func (j *JobGraph) Run() {
 							k8sconfig.BearerToken = token
 						}
 					}
+					exe, err1 := os.Executable()
+					exe, err2 := filepath.EvalSymlinks(exe)
+					if err1 != nil || err2 != nil {
+						exe = os.Args[0]
+						log.Error("Cannot use os.Executable to determine executable path, use", exe, "instead")
+					}
 					workerCtl = master.NewK8sWorkerCtl(&master.K8sWorkerConfig{
-							Name: j.Name,
-							CPULimit: "1",
-							Namespace: *config.Remote.Namespace,
-							K8sConfig: *k8sconfig,
-							WorkerNum: ctx.Int("worker-num"),
-							Volumes: *config.Remote.PodDesc.Volumes,
-							VolumeMounts: *config.Remote.PodDesc.VolumeMounts,
-							WorkerIDs: workerIDs,
-							RandomSeed: seed,
-						})
+						Name: j.Name,
+						CPULimit: "1",
+						Namespace: *config.Remote.Namespace,
+						K8sConfig: *k8sconfig,
+						WorkerNum: ctx.Int("worker-num"),
+						Volumes: *config.Remote.PodDesc.Volumes,
+						VolumeMounts: *config.Remote.PodDesc.VolumeMounts,
+						WorkerIDs: workerIDs,
+						RandomSeed: seed,
+						Image: ctx.String("image-name"),
+						Command: []string{
+							exe,
+							"--config", strings.Join([]string(ctx.GlobalStringSlice("config")), ","),
+							"worker",
+							"--master-addr", fmt.Sprintf("%v:%v", ctx.String("service-name"), ctx.Int("port")),
+						},
+					})
 				} else {
 					j.loadFromLocalConfig(config.Local)
 					workerCtl = NewLocalWorkerCtl(j, ctx.Int("port"))
@@ -599,7 +555,7 @@ func (j *JobGraph) Run() {
 					fmt.Println("Use following command to start a worker")
 					for _, id := range workerIDs {
 						fmt.Println(os.Args[0], "--random-seed", seed,
-						"worker", "--worker-id", id, "--worker-num", j.workerNum)
+							"worker", "--worker-id", id, "--worker-num", j.workerNum)
 					}
 				}
 
@@ -610,19 +566,10 @@ func (j *JobGraph) Run() {
 		{
 			Name: "worker",
 			Flags: []cli.Flag{
-				cli.Int64Flag{
-					Name:"worker-id",
-					Usage: "Define worker's ID",
-				},
 				cli.StringFlag{
 					Name: "master-addr",
 					Value: "localhost:50051",
 					Usage: "Master's address, format: \"HOSTNAME:PORT\"",
-				},
-				cli.IntFlag{
-					Name:"worker-num",
-					Value:1,
-					Usage:"Define how many workers",
 				},
 				cli.BoolFlag{
 					Name: "local",
@@ -630,19 +577,11 @@ func (j *JobGraph) Run() {
 				},
 			},
 			Usage: "Run in remote worker mode, this will read remote config items",
-			Before: func(ctx *cli.Context) error {
-				workerNum := ctx.Int("worker-num")
-				j.initWorkerIDs(workerNum, ctx.GlobalInt64("random-seed"))
-				return nil
-			},
 			Action: func(ctx *cli.Context) error {
-				workerID := ctx.Int64("worker-id")
-				if _, ok := workerIDMap[workerID]; !ok {
-					return cli.NewExitError(
-						fmt.Sprintln("worker id", workerID ,
-							"doesn't exists given seed",
-							ctx.GlobalInt64("random-seed"), workerIDMap), -1)
-				}
+				randomSeed := ctx.GlobalInt64("random-seed")
+				rand.Seed(randomSeed)
+				workerID := rand.Int63()
+
 				if ctx.Bool("local") {
 					j.loadFromLocalConfig(config.Local)
 				} else {
@@ -678,7 +617,6 @@ func (j *JobGraph) Run() {
 				},
 				cli.StringSliceFlag{
 					Name: "image-tags",
-					Value: &cli.StringSlice{"kmr"},
 				},
 				cli.StringFlag{
 					Name: "asset-folder",
@@ -740,7 +678,7 @@ func (j *JobGraph) Run() {
 
 				tags := ctx.StringSlice("image-tags")
 				if len(tags) == 0 {
-					tags = append(tags, j.Name + ":" + "latest")
+					tags = append(tags, strings.ToLower(j.Name) + ":" + "latest")
 				}
 
 				files, err := filepath.Glob(assetFolder+"/*")
@@ -748,7 +686,8 @@ func (j *JobGraph) Run() {
 					return err
 				}
 
-				imageName, err := util.CreateDockerImage( *config.Remote.DockerRegistry, tags, files, dockerWorkDir)
+				fmt.Println(files)
+				imageName, err := util.CreateDockerImage(assetFolder, *config.Remote.DockerRegistry, tags, files, dockerWorkDir)
 				if err != nil {
 					return err
 				}
@@ -757,7 +696,14 @@ func (j *JobGraph) Run() {
 					*config.Remote.ServiceAccount,
 					*config.Remote.Namespace,
 					*config.Remote.PodDesc, imageName, dockerWorkDir,
-					[]string{},
+					[]string{dockerWorkDir + "/internal-used-executable", "--config", dockerWorkDir + "/internal-used-config.json",
+							 "master",
+							 "--remote", "--port", fmt.Sprint(ctx.Int("port")),
+							 "--worker-num", fmt.Sprint(ctx.Int("worker-num")),
+							 "--cpu-limit", fmt.Sprint(ctx.Int("cpu-limit")),
+							 "--image-name", imageName,
+						     "--service-name", j.Name,
+					},
 					int32(ctx.Int("port")))
 
 				if err != nil {
@@ -773,11 +719,3 @@ func (j *JobGraph) Run() {
 	os.Exit(0)
 }
 
-func (j *JobGraph) getMapredNode(jobNodeName string, mapredIndex int) *mapredNode {
-	for _, node := range j.allNodes {
-		if node.jobNode.name == jobNodeName && node.index == mapredIndex {
-			return node
-		}
-	}
-	return nil
-}

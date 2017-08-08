@@ -301,7 +301,7 @@ func NewMaster(port string, workerCtl WorkerCtl, namespace string, workerNum int
 	}
 
 	go func() {
-		lis, err := net.Listen("tcp","localhost:"+port)
+		lis, err := net.Listen("tcp", ":" + port)
 		if err != nil {
 			log.Fatalf("failed to listen: %v", err)
 		}

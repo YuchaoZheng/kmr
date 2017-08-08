@@ -11,15 +11,9 @@ import (
 	"io/ioutil"
 	"os"
 	"github.com/naturali/kmr/util/log"
+	"os/exec"
 	"path"
-	"context"
-	"io"
-	"github.com/docker/docker/builder"
-	"github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/streamformatter"
-	"github.com/docker/docker/pkg/progress"
-	"github.com/docker/docker/client"
-	"github.com/docker/docker/api/types"
+	"path/filepath"
 )
 
 type PodDescription struct {
@@ -28,13 +22,14 @@ type PodDescription struct {
 }
 
 
-func CreateDockerImage(registry string, tags []string, includeFiles []string, dir string) (string, error) {
-	df := "./Dockerfile"
+func CreateDockerImage(assetFolder, registry string, tags []string, includeFiles []string, workDir string) (string, error) {
+	df := path.Join(assetFolder, "Dockerfile")
 	dockerFileContent := `
 	FROM alpine:3.5
 	`
 	for _, file := range includeFiles {
-		dockerFileContent += fmt.Sprintf("COPY %v %v\n", file, dir)
+		rel, _ := filepath.Rel(assetFolder, file)
+		dockerFileContent += fmt.Sprintf("COPY %v %v/\n", rel, workDir)
 	}
 	err := ioutil.WriteFile(df, []byte(dockerFileContent), 0666)
 	if err != nil {
@@ -44,47 +39,33 @@ func CreateDockerImage(registry string, tags []string, includeFiles []string, di
 	log.Info("Dockerfile is:\n", dockerFileContent)
 	defer os.Remove(df)
 
-	dockerCli, err := client.NewEnvClient()
-	ctx := context.Background()
-	if err != nil {
-		return "", err
-	}
-	contextDir, _, err := builder.GetContextFromLocalDir(path.Dir(df), path.Base(df))
-	if err != nil {
-		return "", err
-	}
-	if err := builder.ValidateContextDirectory(contextDir, nil); err != nil {
-		return "", err
-	}
-	buildCtx, err := archive.TarWithOptions(contextDir, &archive.TarOptions{
-		Compression:     archive.Uncompressed,
-		IncludeFiles:    includeFiles,
-	})
-	progressOutput := streamformatter.NewStreamFormatter().NewProgressOutput(os.Stdout, true)
-	var body io.Reader = progress.NewProgressReader(buildCtx, progressOutput, 0, "", "Sending build context to Docker daemon")
+	args := []string{"build", path.Dir(df), "-f", df}
 	for i, tag := range tags {
 		fn := registry + "/" + tag
 		tags[i] = fn
+		args = append(args, "-t", fn)
 	}
-	_, err = dockerCli.ImageBuild(ctx, body, types.ImageBuildOptions{
-		Dockerfile: df,
-		Tags: tags,
-	})
-
-	if err != nil {
+	log.Info("Build command:", args)
+	cmd := exec.Command("docker", args...)
+	cmd.Stdout = os.Stdout
+	cmd.Stdin = os.Stdin
+	cmd.Stderr = os.Stderr
+	err = cmd.Run()
+	if  err != nil {
 		return "", err
 	}
-
-
-	if len(tags) != 0 {
-		log.Info("Pushing tags:")
-		for _, tag := range tags {
-			dockerCli.ImagePush(ctx, tag, types.ImagePushOptions{})
+	log.Info("Pushing tags:")
+	for _, tag := range tags {
+		cmd := exec.Command("docker", "push", tag)
+		cmd.Stdout = os.Stdout
+		cmd.Stdin = os.Stdin
+		cmd.Stderr = os.Stderr
+		err = cmd.Run()
+		if  err != nil {
+			return "", err
 		}
-		return tags[0], nil
-	} else {
-		return "", nil
 	}
+	return tags[0], nil
 }
 
 func CreateK8sKMRJob(jobName , serviceAccountName , namespace string, podDesc PodDescription,
@@ -110,7 +91,8 @@ func CreateK8sKMRJob(jobName , serviceAccountName , namespace string, podDesc Po
 		ObjectMeta: metav1.ObjectMeta{
 			Name: jobName,
 			Labels: map[string]string{
-				"name": jobName,
+				"kmr.jobname": jobName,
+				"app": "kmr-master",
 			},
 		},
 		Spec: v1.PodSpec{
@@ -141,7 +123,8 @@ func CreateK8sKMRJob(jobName , serviceAccountName , namespace string, podDesc Po
 		ObjectMeta: metav1.ObjectMeta{
 			Name: jobName,
 			Labels: map[string]string{
-				"app": jobName,
+				"kmr.jobname": jobName,
+				"app": "kmr-master",
 			},
 		},
 		Spec: v1.ServiceSpec{
@@ -153,15 +136,15 @@ func CreateK8sKMRJob(jobName , serviceAccountName , namespace string, podDesc Po
 				},
 			},
 			Selector: map[string]string {
-				"name": jobName,
+				"kmr.jobname": jobName,
 			},
 		},
 	}
 	k8sConfig, err := clientcmd.NewDefaultClientConfigLoadingRules().Load()
-	if err == nil || k8sConfig == nil{
+	if err != nil || k8sConfig == nil{
 		return "", "", err
 	}
-	clientConfig := clientcmd.NewDefaultClientConfig(*k8sConfig, nil)
+	clientConfig := clientcmd.NewDefaultClientConfig(*k8sConfig, &clientcmd.ConfigOverrides{})
 	restConfig, err := clientConfig.ClientConfig()
 	if err != nil {
 		return "", "", err
@@ -170,11 +153,17 @@ func CreateK8sKMRJob(jobName , serviceAccountName , namespace string, podDesc Po
 	if err != nil {
 		return "", "", err
 	}
-	createdPod, err := k8sclient.Pods(namespace).Update(&pod)
+	falseVal := false
+	k8sclient.ReplicaSets(namespace).Delete(jobName + "-mr", &metav1.DeleteOptions{
+		OrphanDependents: &falseVal,
+	})
+	k8sclient.Pods(namespace).Delete(pod.Name, &metav1.DeleteOptions{})
+	createdPod, err := k8sclient.Pods(namespace).Create(&pod)
 	if err != nil {
 		return "", "", err
 	}
-	createdService, err := k8sclient.Services(namespace).Update(&service)
+	k8sclient.Services(namespace).Delete(service.Name, &metav1.DeleteOptions{})
+	createdService, err := k8sclient.Services(namespace).Create(&service)
 	if err != nil {
 		k8sclient.Pods(namespace).Delete(createdPod.Name, nil)
 		return "", "", err
