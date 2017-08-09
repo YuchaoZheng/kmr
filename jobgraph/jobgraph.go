@@ -164,6 +164,15 @@ func (n *JobNode) GetDependencyOf() (res []*JobNode) {
 	return
 }
 
+func (n *JobNode) GetInputFiles() Files {
+	return n.startNode.GetInputFiles()
+}
+
+func (n *JobNode) GetOutputFiles() Files {
+	return n.endNode.GetOutputFiles()
+}
+
+
 func (j *Job) AddJobNode(inputs Files, name string) *JobNode {
 	jobNode := &JobNode{
 		graph: j,
