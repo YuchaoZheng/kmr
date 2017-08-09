@@ -11,11 +11,11 @@ type Files interface {
 	GetType() string
 }
 
-type interFileNameGenerator struct {
-	mrNode *mapredNode
+type InterFileNameGenerator struct {
+	mrNode *mrNode
 }
 
-func (i *interFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
+func (i *InterFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
 	if i.mrNode == nil {
 		log.Fatal("mrNode is not set")
 	}
@@ -30,7 +30,7 @@ func (i *interFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
 	return fmt.Sprintf("inter-%v-%v-%v", i.mrNode.jobNode.name, i.mrNode.index, mapperIdx*nReducer+reducerIdx)
 }
 
-func (i *interFileNameGenerator) getMapperOutputFiles(mapperIdx int) []string {
+func (i *InterFileNameGenerator) getMapperOutputFiles(mapperIdx int) []string {
 	if i.mrNode == nil {
 		log.Fatal("mrNode is not set")
 	}
@@ -41,7 +41,7 @@ func (i *interFileNameGenerator) getMapperOutputFiles(mapperIdx int) []string {
 	return res
 }
 
-func (i *interFileNameGenerator) getReducerInputFiles(reducerIdx int) []string {
+func (i *InterFileNameGenerator) getReducerInputFiles(reducerIdx int) []string {
 	if i.mrNode == nil {
 		log.Fatal("mrNode is not set")
 	}
@@ -54,7 +54,7 @@ func (i *interFileNameGenerator) getReducerInputFiles(reducerIdx int) []string {
 }
 
 type fileNameGenerator struct {
-	mrNode    *mapredNode
+	mrNode    *mrNode
 	fileCount int
 }
 

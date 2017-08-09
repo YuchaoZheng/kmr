@@ -3,49 +3,84 @@ package jobgraph
 import (
 	"unicode"
 
-	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/mapred"
-	"github.com/naturali/kmr/master"
 	"github.com/naturali/kmr/util/log"
 )
 
-type mapredNode struct {
+type mrNode struct {
 	index   int
 	mapper  mapred.Mapper
 	reducer mapred.Reducer
 	jobNode *jobNode
 
-	mapperReaderType        string
 	mapperBatchSize         int
 	reducerCount            int
-	interFiles              interFileNameGenerator
+	interFiles              InterFileNameGenerator
 	inputFiles, outputFiles Files
 
-	chainPrev, chainNext *mapredNode
+	chainPrev, chainNext *mrNode
 }
 
 type jobNode struct {
 	name                       string
-	startNode, endNode         *mapredNode
+	startNode, endNode         *mrNode
 	dependencies, dependencyOf []*jobNode
-	graph                      *JobGraph
+	graph                      *Job
 }
 
-type JobGraph struct {
+type Job struct {
 	root          []*jobNode
-	allNodes      []*mapredNode
-	mapredNodeIdx int
-
+	allNodes      []*mrNode
+	mrNodeIndex   int
 	name   string
-	master *master.Master
-
-	mapBucket, interBucket, reduceBucket bucket.Bucket
-	workerNum int
 }
 
-func (node *mapredNode) isIntermediaNode() bool {
-	isIntermediaNode := node != node.jobNode.endNode && node.jobNode.startNode != node.jobNode.endNode
-	return isIntermediaNode
+func (node *mrNode) isIntermediateNode() (isIntermediateNode bool) {
+	isIntermediateNode = node != node.jobNode.endNode && node.jobNode.startNode != node.jobNode.endNode
+	return
+}
+
+func (node *mrNode) GetInputFiles() Files {
+	return node.inputFiles
+}
+
+func (node *mrNode) GetOutputFiles() Files {
+	return node.outputFiles
+}
+
+func (node *mrNode) GetInterFileNameGenerator() *InterFileNameGenerator {
+	res := node.interFiles
+	// prevent from writing
+	return &res
+}
+
+func (node *mrNode) GetMapperNum() int {
+	if node.inputFiles == nil || node.mapperBatchSize == 0{
+		return 0
+	}
+	return (len(node.inputFiles.GetFiles()) + node.mapperBatchSize - 1) / node.mapperBatchSize
+}
+
+func (node *mrNode) GetReducerNum() int {
+	return node.reducerCount
+}
+
+func (node *mrNode) GetMapper() mapred.Mapper {
+	return node.mapper
+}
+
+func (node *mrNode) GetReducer() mapred.Reducer {
+	return node.reducer
+}
+
+func (j *Job) ToJobDesc(node *mrNode) *JobDescription {
+	return &JobDescription{
+		JobNodeName:      node.jobNode.name,
+		MapReduceNodeIndex:  int32(node.index),
+		MapperObjectSize: len(node.inputFiles.GetFiles()),
+		MapperBatchSize:  node.mapperBatchSize,
+		ReducerNumber:    node.reducerCount,
+	}
 }
 
 
@@ -54,8 +89,8 @@ func (n *jobNode) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int
 		batchSize = append(batchSize, 1)
 	}
 	if n.endNode.reducer != nil {
-		mrnode := &mapredNode{
-			index:           n.graph.mapredNodeIdx,
+		mrnode := &mrNode{
+			index:           n.graph.mrNodeIndex,
 			jobNode:         n,
 			mapper:          mapper,
 			chainPrev:       n.endNode,
@@ -63,7 +98,7 @@ func (n *jobNode) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int
 			mapperBatchSize: batchSize[0],
 		}
 		mrnode.interFiles.mrNode = mrnode
-		n.graph.mapredNodeIdx++
+		n.graph.mrNodeIndex++
 		n.endNode.chainNext = mrnode
 		n.endNode = mrnode
 		n.graph.allNodes = append(n.graph.allNodes, mrnode)
@@ -79,8 +114,8 @@ func (n *jobNode) AddReducer(reducer mapred.Reducer, num int) *jobNode {
 		num = 1
 	}
 	if n.endNode.reducer != nil {
-		mrnode := &mapredNode{
-			index:           n.graph.mapredNodeIdx,
+		mrnode := &mrNode{
+			index:           n.graph.mrNodeIndex,
 			jobNode:         n,
 			mapper:          IdentityMapper,
 			reducer:         reducer,
@@ -89,7 +124,7 @@ func (n *jobNode) AddReducer(reducer mapred.Reducer, num int) *jobNode {
 			mapperBatchSize: 1,
 		}
 		mrnode.interFiles.mrNode = mrnode
-		n.graph.mapredNodeIdx++
+		n.graph.mrNodeIndex++
 		n.endNode.chainNext = mrnode
 		n.endNode = mrnode
 		n.graph.allNodes = append(n.graph.allNodes, mrnode)
@@ -115,21 +150,43 @@ func (n *jobNode) DependOn(nodes ...*jobNode) *jobNode {
 	return n
 }
 
-func (j *JobGraph) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *jobNode {
+func (n *jobNode) GetMapReduceNodes() (res []*mrNode) {
+	res = make([]*mrNode, 0)
+	for startNode := n.startNode; startNode != nil; startNode = startNode.chainNext {
+		res = append(res, startNode)
+	}
+	return
+}
+
+// GetDependencies return a copy of
+func (n *jobNode) GetDependencies() (res []*jobNode){
+	res = make([]*jobNode, len(n.dependencies))
+	copy(res, n.dependencies)
+	return
+}
+
+// GetDependencyOf return a copy of
+func (n *jobNode) GetDependencyOf() (res []*jobNode){
+	res = make([]*jobNode, len(n.dependencyOf))
+	copy(res, n.dependencyOf)
+	return
+}
+
+func (j *Job) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *jobNode {
 	if len(batchSize) == 0 {
 		batchSize = append(batchSize, 1)
 	}
 	jnode := &jobNode{
 		graph: j,
 	}
-	mrnode := &mapredNode{
-		index:           j.mapredNodeIdx,
+	mrnode := &mrNode{
+		index:           j.mrNodeIndex,
 		jobNode:         jnode,
 		mapper:          mapper,
 		inputFiles:      inputs,
 		mapperBatchSize: batchSize[0],
 	}
-	j.mapredNodeIdx++
+	j.mrNodeIndex++
 	jnode.startNode = mrnode
 	jnode.endNode = mrnode
 	mrnode.outputFiles = &fileNameGenerator{mrnode, 0}
@@ -140,22 +197,22 @@ func (j *JobGraph) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...in
 	return jnode
 }
 
-func (j *JobGraph) AddReducer(reducer mapred.Reducer, inputs Files, num int) *jobNode {
+func (j *Job) AddReducer(reducer mapred.Reducer, inputs Files, num int) *jobNode {
 	if num <= 0 {
 		num = 1
 	}
 	jnode := &jobNode{
 		graph: j,
 	}
-	mrnode := &mapredNode{
-		index:           j.mapredNodeIdx,
+	mrnode := &mrNode{
+		index:           j.mrNodeIndex,
 		jobNode:         jnode,
 		mapper:          IdentityMapper,
 		reducer:         reducer,
 		inputFiles:      inputs,
 		mapperBatchSize: 1,
 	}
-	j.mapredNodeIdx++
+	j.mrNodeIndex++
 	jnode.startNode = mrnode
 	jnode.endNode = mrnode
 	mrnode.outputFiles = &fileNameGenerator{mrnode, num}
@@ -168,8 +225,10 @@ func (j *JobGraph) AddReducer(reducer mapred.Reducer, inputs Files, num int) *jo
 }
 
 // ValidateGraph validate the graph to ensure it can be excuted
-func (j *JobGraph) ValidateGraph() {
+func (j *Job) ValidateGraph() {
 	visitedMap := make(map[*jobNode]bool)
+	jobNodeNameMap := make(map[string]bool)
+	mrNodeIndexMap := make(map[int]bool)
 	mapredNodeCount := 0
 	nodeStack := stack{}
 	var dfs func(*jobNode)
@@ -186,9 +245,19 @@ func (j *JobGraph) ValidateGraph() {
 			return
 		}
 		visitedMap[node] = true
+		if _, ok := jobNodeNameMap[node.name]; ok {
+			log.Fatal("Duplicate job name", node.name)
+		}
+		jobNodeNameMap[node.name] = true
 		// Check whether map/reduce chain is correct
 		for startNode := node.startNode; startNode != nil; startNode = startNode.chainNext {
 			mapredNodeCount++
+
+			if _, ok := mrNodeIndexMap[startNode.index]; ok {
+				log.Fatalf("Duplicate mrNode index %v in job %v", startNode.index, node.name)
+			}
+			mrNodeIndexMap[startNode.index] = true
+
 			if len(startNode.inputFiles.GetFiles()) == 0 {
 				log.Fatalf("%v-%v input file length is 0", node.name, startNode.index)
 			}
@@ -232,31 +301,7 @@ func (j *JobGraph) ValidateGraph() {
 	}
 }
 
-func (j *JobGraph) convertNodeToJobDesc(node *mapredNode) *JobDescription {
-	if node.isIntermediaNode() {
-
-	}
-	return &JobDescription{
-		JobNodeName:      node.jobNode.name,
-		MapredNodeIndex:  int32(node.index),
-		MapperObjectSize: len(node.inputFiles.GetFiles()),
-		MapperBatchSize:  node.mapperBatchSize,
-		ReducerNumber:    node.reducerCount,
-	}
-}
-
-func (j *JobGraph) loadBucket(m, i, r *BucketDescription) {
-	var err1, err2, err3 error
-	j.mapBucket, err1 = bucket.NewBucket(m.BucketType, m.Config)
-	j.interBucket, err2 = bucket.NewBucket(i.BucketType, i.Config)
-	j.reduceBucket, err3 = bucket.NewBucket(r.BucketType, r.Config)
-
-	if err1 != nil || err2 != nil || err3 != nil {
-		log.Fatal("Falied to create bucket", err1, err2, err3)
-	}
-}
-
-func (j *JobGraph) getMapredNode(jobNodeName string, mapredIndex int) *mapredNode {
+func (j *Job) GetMapReduceNode(jobNodeName string, mapredIndex int) *mrNode {
 	for _, node := range j.allNodes {
 		if node.jobNode.name == jobNodeName && node.index == mapredIndex {
 			return node
@@ -265,7 +310,7 @@ func (j *JobGraph) getMapredNode(jobNodeName string, mapredIndex int) *mapredNod
 	return nil
 }
 
-func (j *JobGraph) SetName(name string) {
+func (j *Job) SetName(name string) {
 	for _, c := range []rune(name) {
 		if !unicode.IsLower(c) || c == rune('-') {
 			log.Fatal("Job name should only contain lowercase and '-'")
