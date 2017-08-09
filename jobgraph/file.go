@@ -3,6 +3,7 @@ package jobgraph
 
 import (
 	"fmt"
+
 	"github.com/naturali/kmr/util/log"
 )
 
@@ -12,12 +13,12 @@ type Files interface {
 }
 
 type InterFileNameGenerator struct {
-	mrNode *mrNode
+	mrNode *MapReduceNode
 }
 
 func (i *InterFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
 	if i.mrNode == nil {
-		log.Fatal("mrNode is not set")
+		log.Fatal("MapReduceNode is not set")
 	}
 	nMappers := (len(i.mrNode.inputFiles.GetFiles()) + i.mrNode.mapperBatchSize - 1) / i.mrNode.mapperBatchSize
 	nReducer := i.mrNode.reducerCount
@@ -32,7 +33,7 @@ func (i *InterFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
 
 func (i *InterFileNameGenerator) getMapperOutputFiles(mapperIdx int) []string {
 	if i.mrNode == nil {
-		log.Fatal("mrNode is not set")
+		log.Fatal("MapReduceNode is not set")
 	}
 	res := make([]string, i.mrNode.reducerCount)
 	for reducerIdx := range res {
@@ -43,7 +44,7 @@ func (i *InterFileNameGenerator) getMapperOutputFiles(mapperIdx int) []string {
 
 func (i *InterFileNameGenerator) getReducerInputFiles(reducerIdx int) []string {
 	if i.mrNode == nil {
-		log.Fatal("mrNode is not set")
+		log.Fatal("MapReduceNode is not set")
 	}
 	nMappers := (len(i.mrNode.inputFiles.GetFiles()) + i.mrNode.mapperBatchSize - 1) / i.mrNode.mapperBatchSize
 	res := make([]string, nMappers)
@@ -54,7 +55,7 @@ func (i *InterFileNameGenerator) getReducerInputFiles(reducerIdx int) []string {
 }
 
 type fileNameGenerator struct {
-	mrNode    *mrNode
+	mrNode    *MapReduceNode
 	fileCount int
 }
 
@@ -83,4 +84,3 @@ func (f *InputFiles) GetFiles() []string {
 func (f *InputFiles) GetType() string {
 	return f.Type
 }
-
