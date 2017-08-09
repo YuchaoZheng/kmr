@@ -2,6 +2,8 @@ package util
 
 import "errors"
 
+var EmptyStackError = errors.New("Stack is empty")
+
 type Stack struct {
 	items []interface{}
 }
@@ -12,9 +14,9 @@ func (s Stack) Push(v interface{}) {
 
 func (s Stack) Pop() error {
 	if s.Size() == 0 {
-		return errors.New("Stack is empty")
+		return EmptyStackError
 	}
-	s.items = s.items[:s.Size() - 1]
+	s.items = s.items[:s.Size()-1]
 	return nil
 }
 
@@ -28,9 +30,9 @@ func (s Stack) Empty() bool {
 
 func (s Stack) Top() (interface{}, error) {
 	if s.Size() == 0 {
-		return nil, errors.New("Stack is empty")
+		return nil, EmptyStackError
 	}
-	return s.items[s.Size() - 1], nil
+	return s.items[s.Size()-1], nil
 }
 
 func (s Stack) Items() []interface{} {

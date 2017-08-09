@@ -1,6 +1,5 @@
 package jobgraph
 
-
 import (
 	"fmt"
 

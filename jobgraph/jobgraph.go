@@ -5,7 +5,6 @@ import (
 
 	"github.com/naturali/kmr/mapred"
 	"github.com/naturali/kmr/util/log"
-	"github.com/naturali/kmr/util"
 )
 
 type MapReduceNode struct {
@@ -56,7 +55,7 @@ func (node *MapReduceNode) GetInterFileNameGenerator() *InterFileNameGenerator {
 }
 
 func (node *MapReduceNode) GetMapperNum() int {
-	if node.inputFiles == nil || node.mapperBatchSize == 0{
+	if node.inputFiles == nil || node.mapperBatchSize == 0 {
 		return 0
 	}
 	return (len(node.inputFiles.GetFiles()) + node.mapperBatchSize - 1) / node.mapperBatchSize
@@ -76,14 +75,13 @@ func (node *MapReduceNode) GetReducer() mapred.Reducer {
 
 func (node *MapReduceNode) ToJobDesc() *JobDescription {
 	return &JobDescription{
-		JobNodeName:      node.jobNode.name,
-		MapReduceNodeIndex:  int32(node.index),
-		MapperObjectSize: len(node.inputFiles.GetFiles()),
-		MapperBatchSize:  node.mapperBatchSize,
-		ReducerNumber:    node.reducerCount,
+		JobNodeName:        node.jobNode.name,
+		MapReduceNodeIndex: int32(node.index),
+		MapperObjectSize:   len(node.inputFiles.GetFiles()),
+		MapperBatchSize:    node.mapperBatchSize,
+		ReducerNumber:      node.reducerCount,
 	}
 }
-
 
 func (n *JobNode) AddMapper(mapper mapred.Mapper, batchSize int) *JobNode {
 	if n.endNode.reducer != nil {
@@ -136,11 +134,6 @@ func (n *JobNode) AddReducer(reducer mapred.Reducer, num int) *JobNode {
 	return n
 }
 
-func (n *JobNode) SetName(name string) *JobNode {
-	n.name = name
-	return n
-}
-
 func (n *JobNode) DependOn(nodes ...*JobNode) *JobNode {
 	n.dependencies = append(n.dependencies, nodes...)
 	for _, n := range nodes {
@@ -158,14 +151,14 @@ func (n *JobNode) GetMapReduceNodes() (res []*MapReduceNode) {
 }
 
 // GetDependencies return a copy of
-func (n *JobNode) GetDependencies() (res []*JobNode){
+func (n *JobNode) GetDependencies() (res []*JobNode) {
 	res = make([]*JobNode, len(n.dependencies))
 	copy(res, n.dependencies)
 	return
 }
 
 // GetDependencyOf return a copy of
-func (n *JobNode) GetDependencyOf() (res []*JobNode){
+func (n *JobNode) GetDependencyOf() (res []*JobNode) {
 	res = make([]*JobNode, len(n.dependencyOf))
 	copy(res, n.dependencyOf)
 	return
@@ -178,10 +171,10 @@ func (j *Job) AddJobNode(inputs Files, name string) *JobNode {
 	}
 
 	mrNode := &MapReduceNode{
-		index: 			 j.mrNodeIndex,
+		index:           j.mrNodeIndex,
 		jobNode:         jobNode,
 		inputFiles:      inputs,
-		mapper: 		 IdentityMapper,
+		mapper:          IdentityMapper,
 		mapperBatchSize: 0,
 	}
 	j.mrNodeIndex++
@@ -202,17 +195,15 @@ func (j *Job) ValidateGraph() {
 	visitedMap := make(map[*JobNode]bool)
 	jobNodeNameMap := make(map[string]bool)
 	mrNodeIndexMap := make(map[int]bool)
+	inStackMap := make(map[int]bool)
 	mapredNodeCount := 0
-	nodeStack := util.Stack{}
 	var dfs func(*JobNode)
 	dfs = func(node *JobNode) {
 		if node.startNode == nil {
 			log.Fatal("Start node in a job node should not be nil. Job:", node.name)
 		}
-		for _, n := range nodeStack.Items() {
-			if node.startNode.index == n.(int) {
-				log.Fatal("Job graph has circle around", node.name)
-			}
+		if _, ok := inStackMap[node.startNode.index]; ok {
+			log.Fatal("Job graph has circle around", node.name)
 		}
 		if _, ok := visitedMap[node]; ok {
 			return
@@ -257,11 +248,11 @@ func (j *Job) ValidateGraph() {
 				log.Fatalf("%v-%v doesn't have reducer", node.name, startNode.index)
 			}
 		}
-		nodeStack.Push(int(node.startNode.index))
+		inStackMap[int(node.startNode.index)] = true
 		for _, dep := range node.dependencyOf {
 			dfs(dep)
 		}
-		nodeStack.Pop()
+		delete(inStackMap, int(node.startNode.index))
 	}
 
 	for _, n := range j.roots {
@@ -291,7 +282,7 @@ func (j *Job) SetName(name string) {
 	j.name = name
 }
 
-func (j *Job) GetRootNodes() (res []*JobNode){
+func (j *Job) GetRootNodes() (res []*JobNode) {
 	res = make([]*JobNode, len(j.roots))
 	copy(res, j.roots)
 	return
