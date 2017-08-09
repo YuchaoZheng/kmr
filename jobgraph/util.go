@@ -18,7 +18,7 @@ func (cm *combinedMapper) Map(key interface{}, value interface{}, output func(k 
 	}, reporter)
 }
 
-//CombineMappers combine multiple mappers into one
+// CombineMappers combine multiple mappers into one
 func combineMappers(mappers ...mapred.Mapper) mapred.Mapper {
 	numMappers := len(mappers)
 	switch numMappers {
@@ -27,9 +27,18 @@ func combineMappers(mappers ...mapred.Mapper) mapred.Mapper {
 	case 1:
 		return mappers[0]
 	default:
-		return &combinedMapper{
-			FirstMapper:  mappers[0],
-			SecondMapper: combineMappers(mappers[1:]...),
+		if mappers[0] == nil {
+			return combineMappers(mappers[1:]...)
+		} else {
+			combined := combineMappers(mappers[1:]...)
+			if combined == nil {
+				return mappers[0]
+			} else {
+				return &combinedMapper{
+					FirstMapper:  mappers[0],
+					SecondMapper: combined,
+				}
+			}
 		}
 	}
 }

@@ -85,10 +85,7 @@ func (node *MapReduceNode) ToJobDesc() *JobDescription {
 }
 
 
-func (n *JobNode) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *JobNode {
-	if len(batchSize) == 0 {
-		batchSize = append(batchSize, 1)
-	}
+func (n *JobNode) AddMapper(mapper mapred.Mapper, batchSize int) *JobNode {
 	if n.endNode.reducer != nil {
 		mrnode := &MapReduceNode{
 			index:           n.graph.mrNodeIndex,
@@ -96,7 +93,7 @@ func (n *JobNode) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int
 			mapper:          mapper,
 			chainPrev:       n.endNode,
 			inputFiles:      n.endNode.outputFiles,
-			mapperBatchSize: batchSize[0],
+			mapperBatchSize: batchSize,
 		}
 		mrnode.interFiles.mrNode = mrnode
 		n.graph.mrNodeIndex++
@@ -105,6 +102,7 @@ func (n *JobNode) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int
 		n.graph.mrNodes = append(n.graph.mrNodes, mrnode)
 	} else {
 		//use origin
+		n.endNode.mapperBatchSize = batchSize
 		n.endNode.mapper = combineMappers(n.endNode.mapper, mapper)
 	}
 	return n
@@ -173,56 +171,30 @@ func (n *JobNode) GetDependencyOf() (res []*JobNode){
 	return
 }
 
-func (j *Job) AddMapper(mapper mapred.Mapper, inputs Files, batchSize ...int) *JobNode {
-	if len(batchSize) == 0 {
-		batchSize = append(batchSize, 1)
-	}
-	jnode := &JobNode{
+func (j *Job) AddJobNode(inputs Files, name string) *JobNode {
+	jobNode := &JobNode{
 		graph: j,
+		name:  name,
 	}
-	mrnode := &MapReduceNode{
-		index:           j.mrNodeIndex,
-		jobNode:         jnode,
-		mapper:          mapper,
+
+	mrNode := &MapReduceNode{
+		index: 			 j.mrNodeIndex,
+		jobNode:         jobNode,
 		inputFiles:      inputs,
-		mapperBatchSize: batchSize[0],
+		mapper: 		 IdentityMapper,
+		mapperBatchSize: 0,
 	}
 	j.mrNodeIndex++
-	jnode.startNode = mrnode
-	jnode.endNode = mrnode
-	mrnode.outputFiles = &fileNameGenerator{mrnode, 0}
-	mrnode.interFiles.mrNode = mrnode
 
-	j.roots = append(j.roots, jnode)
-	j.mrNodes = append(j.mrNodes, mrnode)
-	return jnode
-}
+	mrNode.outputFiles = &fileNameGenerator{mrNode, 0}
+	mrNode.interFiles.mrNode = mrNode
 
-func (j *Job) AddReducer(reducer mapred.Reducer, inputs Files, num int) *JobNode {
-	if num <= 0 {
-		num = 1
-	}
-	jnode := &JobNode{
-		graph: j,
-	}
-	mrnode := &MapReduceNode{
-		index:           j.mrNodeIndex,
-		jobNode:         jnode,
-		mapper:          IdentityMapper,
-		reducer:         reducer,
-		inputFiles:      inputs,
-		mapperBatchSize: 1,
-	}
-	j.mrNodeIndex++
-	jnode.startNode = mrnode
-	jnode.endNode = mrnode
-	mrnode.outputFiles = &fileNameGenerator{mrnode, num}
-	mrnode.interFiles.mrNode = mrnode
-	mrnode.reducerCount = num
+	jobNode.startNode = mrNode
+	jobNode.endNode = mrNode
 
-	j.roots = append(j.roots, jnode)
-	j.mrNodes = append(j.mrNodes, mrnode)
-	return jnode
+	j.roots = append(j.roots, jobNode)
+	j.mrNodes = append(j.mrNodes, mrNode)
+	return jobNode
 }
 
 // ValidateGraph validate the graph to ensure it can be excuted
@@ -274,10 +246,9 @@ func (j *Job) ValidateGraph() {
 			if startNode.mapperBatchSize == 0 {
 				log.Fatalf("%v-%v mapper batch size is 0", node.name, startNode.index)
 			}
-			nMappers := len(startNode.inputFiles.GetFiles())
-			if len(startNode.interFiles.getMapperOutputFiles(0))*
-				len(startNode.interFiles.getReducerInputFiles(0)) != nMappers*startNode.reducerCount {
-				log.Fatalf("%v-%v inter file len is not right 0", node.name, startNode.index)
+			if len(startNode.interFiles.getReducerInputFiles(0))*
+				len(startNode.interFiles.getMapperOutputFiles(0)) != startNode.GetMapperNum()*startNode.GetReducerNum() {
+				log.Fatalf("%v-%v inter file len is not right", node.name, startNode.index)
 			}
 			if startNode.mapper == nil {
 				log.Fatalf("%v-%v doesn't have mapper", node.name, startNode.index)
