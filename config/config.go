@@ -1,13 +1,13 @@
 package config
 
 import (
-	"os"
-	"reflect"
-	"strings"
-	"path"
-	"os/user"
 	"encoding/json"
 	"io/ioutil"
+	"os"
+	"os/user"
+	"path"
+	"reflect"
+	"strings"
 )
 
 func overrideStructV(main reflect.Value, extra reflect.Value) {
@@ -63,7 +63,7 @@ func LoadConfigFromMultiFiles(replacesMap map[string]string, configFiles ...stri
 			if err != nil {
 				continue
 			}
-			for k,v := range replacesMap {
+			for k, v := range replacesMap {
 				b = []byte(strings.Replace(string(b), k, v, -1))
 			}
 			json.Unmarshal(b, newconfig)
@@ -74,7 +74,7 @@ func LoadConfigFromMultiFiles(replacesMap map[string]string, configFiles ...stri
 }
 
 func GetConfigLoadOrder() (configFiles []string) {
-	configFiles = []string {
+	configFiles = []string{
 		"/etc/kmr/config.json",
 		"./config.json",
 	}

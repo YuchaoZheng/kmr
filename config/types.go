@@ -35,4 +35,3 @@ type KMRConfig struct {
 	Local  *LocalConfig  `json:"local"`
 	Remote *RemoteConfig `json:"remote"`
 }
-
