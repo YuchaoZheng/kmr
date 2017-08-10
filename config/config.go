@@ -76,7 +76,6 @@ func LoadConfigFromMultiFiles(replacesMap map[string]string, configFiles ...stri
 func GetConfigLoadOrder() (configFiles []string) {
 	configFiles = []string{
 		"/etc/kmr/config.json",
-		"./config.json",
 	}
 
 	u, err := user.Current()
