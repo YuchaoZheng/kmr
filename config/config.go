@@ -78,9 +78,8 @@ func GetConfigLoadOrder() (configFiles []string) {
 		"/etc/kmr/config.json",
 	}
 
-	u, err := user.Current()
 	// In cluster we don't have home dir
-	if err == nil {
+	if u, err := user.Current(); err == nil {
 		configFiles = append(configFiles, path.Join(u.HomeDir, ".config/kmr/config.json"))
 	}
 	configFiles = append(configFiles, "./config.json")
