@@ -172,6 +172,10 @@ func (n *JobNode) GetOutputFiles() Files {
 	return n.endNode.GetOutputFiles()
 }
 
+func (n *JobNode) GetName() string {
+	return n.name
+}
+
 
 func (j *Job) AddJobNode(inputs Files, name string) *JobNode {
 	jobNode := &JobNode{
@@ -289,6 +293,10 @@ func (j *Job) SetName(name string) {
 		}
 	}
 	j.name = name
+}
+
+func (j *Job) GetName() string {
+	return j.name
 }
 
 func (j *Job) GetRootNodes() (res []*JobNode) {
