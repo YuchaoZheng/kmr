@@ -15,7 +15,7 @@ type InterFileNameGenerator struct {
 	mrNode *MapReduceNode
 }
 
-func (i *InterFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
+func (i *InterFileNameGenerator) GetFile(mapperIdx, reducerIdx int) string {
 	if i.mrNode == nil {
 		log.Fatal("MapReduceNode is not set")
 	}
@@ -30,25 +30,25 @@ func (i *InterFileNameGenerator) getFile(mapperIdx, reducerIdx int) string {
 	return fmt.Sprintf("inter-%v-%v-%v", i.mrNode.jobNode.name, i.mrNode.index, mapperIdx*nReducer+reducerIdx)
 }
 
-func (i *InterFileNameGenerator) getMapperOutputFiles(mapperIdx int) []string {
+func (i *InterFileNameGenerator) GetMapperOutputFiles(mapperIdx int) []string {
 	if i.mrNode == nil {
 		log.Fatal("MapReduceNode is not set")
 	}
 	res := make([]string, i.mrNode.reducerCount)
 	for reducerIdx := range res {
-		res[reducerIdx] = i.getFile(mapperIdx, reducerIdx)
+		res[reducerIdx] = i.GetFile(mapperIdx, reducerIdx)
 	}
 	return res
 }
 
-func (i *InterFileNameGenerator) getReducerInputFiles(reducerIdx int) []string {
+func (i *InterFileNameGenerator) GetReducerInputFiles(reducerIdx int) []string {
 	if i.mrNode == nil {
 		log.Fatal("MapReduceNode is not set")
 	}
 	nMappers := (len(i.mrNode.inputFiles.GetFiles()) + i.mrNode.mapperBatchSize - 1) / i.mrNode.mapperBatchSize
 	res := make([]string, nMappers)
 	for mapperIdx := range res {
-		res[mapperIdx] = i.getFile(mapperIdx, reducerIdx)
+		res[mapperIdx] = i.GetFile(mapperIdx, reducerIdx)
 	}
 	return res
 }

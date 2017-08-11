@@ -35,9 +35,21 @@ type Job struct {
 	name        string
 }
 
-func (node *MapReduceNode) isEndNode() (res bool) {
+func (node *MapReduceNode) IsEndNode() (res bool) {
 	res = node == node.jobNode.endNode
 	return
+}
+
+func (node *MapReduceNode) GetPrev() *MapReduceNode {
+	return node.chainPrev
+}
+
+func (node *MapReduceNode) GetNext() *MapReduceNode {
+	return node.chainNext
+}
+
+func (node *MapReduceNode) GetIndex() int {
+	return node.index
 }
 
 func (node *MapReduceNode) GetInputFiles() Files {
@@ -71,6 +83,10 @@ func (node *MapReduceNode) GetMapper() mapred.Mapper {
 
 func (node *MapReduceNode) GetReducer() mapred.Reducer {
 	return node.reducer
+}
+
+func (node *MapReduceNode) GetMapperBatchSize() int {
+	return node.mapperBatchSize
 }
 
 func (node *MapReduceNode) ToJobDesc() *JobDescription {
@@ -176,7 +192,6 @@ func (n *JobNode) GetName() string {
 	return n.name
 }
 
-
 func (j *Job) AddJobNode(inputs Files, name string) *JobNode {
 	jobNode := &JobNode{
 		graph: j,
@@ -250,8 +265,8 @@ func (j *Job) ValidateGraph() {
 			if startNode.mapperBatchSize == 0 {
 				log.Fatalf("%v-%v mapper batch size is 0", node.name, startNode.index)
 			}
-			if len(startNode.interFiles.getReducerInputFiles(0))*
-				len(startNode.interFiles.getMapperOutputFiles(0)) != startNode.GetMapperNum()*startNode.GetReducerNum() {
+			if len(startNode.interFiles.GetReducerInputFiles(0))*
+				len(startNode.interFiles.GetMapperOutputFiles(0)) != startNode.GetMapperNum()*startNode.GetReducerNum() {
 				log.Fatalf("%v-%v inter file len is not right", node.name, startNode.index)
 			}
 			if startNode.mapper == nil {

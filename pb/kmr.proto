@@ -1,55 +1,45 @@
-syntax = "proto3";
+ syntax = "proto3";
 
-package kmrpb;
+ package kmrpb;
 
-service Master {
-    rpc RequestTask(RegisterParams) returns (Task) {}
-    rpc ReportTask(ReportInfo) returns (Response) {}
-}
+ service Master {
+     rpc RequestTask(RegisterParams) returns (Task) {}
+     rpc ReportTask(ReportInfo) returns (Response) {}
+ }
 
-message RegisterParams {
-    string jobName = 1;
-}
+ message RegisterParams {
+     string jobName = 1;
+     int64 workerID = 2;
+ }
 
-message ReportInfo {
-    string jobName = 1;
-    string phase = 2;
-    int32 taskID = 3;
-    int64 workerID = 4;
-    enum ErrorCode {
-        DOING = 0;
-        ERROR = 1;
-        FINISH = 2;
-    }
-    ErrorCode retcode = 5;
-}
+ message ReportInfo {
+     TaskInfo taskInfo = 1;
+     int64 workerID = 4;
+     enum ErrorCode {
+         DOING = 0;
+         ERROR = 1;
+         FINISH = 2;
+     }
+     ErrorCode retcode = 5;
+ }
 
-message Task {
-    int32 retcode = 1;
-    TaskInfo taskinfo = 2;
-    int64 workerID = 3;
-}
+ message Task {
+     int32 retcode = 1;
+     TaskInfo taskinfo = 2;
+ }
 
-message TaskInfo {
-    string jobName = 1;
-    repeated string files = 2; // Batch task for map, shards for reduce
-    string mapBucketJson = 3;
-    string intermediateBucketJson = 4;
-    string reduceBucketJson = 5;
-    string phase = 6;
-    int32 nMap = 7;
-    int32 nReduce = 8;
-    string readerType = 9;
-    int32 taskID = 10;
-    repeated int64 commitMappers = 11;
-    int32 mapBatchSize = 12;
-}
+ message TaskInfo {
+     string jobNodeName = 1;
+     int32 mapredNodeIndex = 2;
+     string phase = 3;
+     int32 subIndex = 4;
+ }
 
-message Response {
-    int32 retcode = 1;
-}
+ message Response {
+     int32 retcode = 1;
+ }
 
-message KV {
-    bytes key = 1;
-    bytes value = 2;
-}
+ message KV {
+     bytes key = 1;
+     bytes value = 2;
+ }
