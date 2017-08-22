@@ -3,16 +3,19 @@ package executor
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"time"
 
+	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/jobgraph"
 	"github.com/naturali/kmr/master"
 	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/records"
 	"github.com/naturali/kmr/util/log"
-	"github.com/naturali/kmr/bucket"
 
 	"google.golang.org/grpc"
+	"k8s.io/apimachinery/pkg/util/rand"
 )
 
 // XXX this should be unified with master.map/reducePhase
@@ -30,17 +33,29 @@ type Worker struct {
 }
 
 // NewWorker create a worker
-func NewWorker(job *jobgraph.Job, workerID int64, masterAddr string, flushOutSize int, mapBucket, interBucket, reduceBucket *bucket.Bucket) *Worker {
+func NewWorker(job *jobgraph.Job, workerID int64, masterAddr string, flushOutSize int, mapBucket, interBucket, reduceBucket bucket.Bucket) *Worker {
 	worker := Worker{
-		job: job,
-		masterAddr:masterAddr,
-		mapBucket:mapBucket,
-		interBucket:interBucket,
-		reduceBucket:reduceBucket,
-		workerID: workerID,
+		job:          job,
+		masterAddr:   masterAddr,
+		mapBucket:    mapBucket,
+		interBucket:  interBucket,
+		reduceBucket: reduceBucket,
+		workerID:     workerID,
 		flushOutSize: flushOutSize,
 	}
 	return &worker
+}
+
+func (w *Worker) getBucket(files jobgraph.Files) bucket.Bucket {
+	switch files.GetBucketType() {
+	case jobgraph.MapBucket:
+		return w.mapBucket
+	case jobgraph.ReduceBucket:
+		return w.reduceBucket
+	case jobgraph.InterBucket:
+		return w.interBucket
+	}
+	return nil
 }
 
 func (w *Worker) Run() {
@@ -91,20 +106,24 @@ func (w *Worker) Run() {
 		})
 		// backoff
 		if err != nil {
-			time.Sleep(1 * time.Second)
+			time.Sleep(time.Duration(rand.IntnRange(1, 3)) * time.Second)
 		}
 	}
 }
 
-func (w *Worker) executeTask(task *kmrpb.TaskInfo) {
+func (w *Worker) executeTask(task *kmrpb.TaskInfo) (err error) {
 	cw := &ComputeWrapClass{}
+	err = nil
 	mapredNode := w.job.GetMapReduceNode(task.JobNodeName, int(task.MapredNodeIndex))
-	cw.BindMapper(mapredNode.GetMapper())
-	cw.BindReducer(mapredNode.GetReducer())
 	if mapredNode == nil {
 		x, _ := json.Marshal(task)
-		log.Error("Cannot find mapred node", x)
+		err = errors.New(fmt.Sprint("Cannot find mapred node", x))
+		log.Error(err)
+		return
 	}
+	cw.BindMapper(mapredNode.GetMapper())
+	cw.BindReducer(mapredNode.GetReducer())
+	cw.BindCombiner(mapredNode.GetCombiner())
 	switch task.Phase {
 	case mapPhase:
 		w.runMapper(cw, mapredNode, task.SubIndex)
@@ -112,8 +131,9 @@ func (w *Worker) executeTask(task *kmrpb.TaskInfo) {
 		w.runReducer(cw, mapredNode, task.SubIndex)
 	default:
 		x, _ := json.Marshal(task)
-		log.Fatal("Unknown task phase", x)
+		err = errors.New(fmt.Sprint("Unkown task phase", x))
 	}
+	return err
 }
 
 func (w *Worker) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, subIndex int32) {
@@ -130,13 +150,7 @@ func (w *Worker) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, 
 	}
 
 	outputFile := node.GetOutputFiles().GetFiles()[subIndex]
-	var bk bucket.Bucket
-	if node.IsEndNode() {
-		bk = w.interBucket
-	} else {
-		bk = w.reduceBucket
-	}
-	writer, err := bk.OpenWrite(outputFile)
+	writer, err := w.getBucket(node.GetOutputFiles()).OpenWrite(outputFile)
 	if err != nil {
 		log.Fatalf("Failed to open intermediate: %v", err)
 	}
@@ -151,9 +165,10 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 	// Inputs Files
 	inputFiles := node.GetInputFiles().GetFiles()
 	readers := make([]records.RecordReader, 0)
-	for fidx := int(subIndex) * node.GetMapperBatchSize(); fidx < len(inputFiles); fidx++ {
+	for fidx := int(subIndex) * node.GetMapperBatchSize(); fidx < len(inputFiles) && fidx < int(subIndex+1)*node.GetMapperBatchSize(); fidx++ {
 		file := inputFiles[fidx]
-		reader, err := w.mapBucket.OpenRead(file)
+		log.Debug("Opening mapper input file", file)
+		reader, err := w.getBucket(node.GetInputFiles()).OpenRead(file)
 		if err != nil {
 			log.Fatalf("Fail to open object %s: %v", file, err)
 		}

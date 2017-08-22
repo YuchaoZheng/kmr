@@ -36,33 +36,40 @@ func (cw *ComputeWrapClass) BindReducer(reducer mapred.Reducer) {
 }
 
 func (cw *ComputeWrapClass) BindCombiner(combiner mapred.Reducer) {
-	// XXX: should use reducer directly
-	cw.combineFunc = func(key []byte, v1 []byte, v2 []byte) []byte {
-		res := make([]byte, 0)
-		counter := 0
-		nextIter := &ValueIteratorFunc{
-			IterFunc: func() (interface{}, error) {
-				if counter == 0 {
-					counter++
-					return cw.reducer.GetInputValueTypeConverter().FromBytes(v1), nil
-				} else if counter == 1 {
-					counter++
-					return cw.reducer.GetInputValueTypeConverter().FromBytes(v2), nil
-				}
-				return nil, errors.New(mapred.ErrorNoMoreKey)
-			},
-		}
-		alreadyOutput := false
-		collectFunc := func(v interface{}) {
-			if alreadyOutput {
-				log.Errorf("value of key: %v has been collected", key)
-				return
+	// TODO: should use reducer directly
+	if combiner != nil {
+		cw.combineFunc = func(key []byte, v1 []byte, v2 []byte) []byte {
+			var res []byte
+			counter := 0
+			nextIter := &ValueIteratorFunc{
+				IterFunc: func() (interface{}, error) {
+					if counter == 0 {
+						counter++
+						return cw.reducer.GetInputValueTypeConverter().FromBytes(v1), nil
+					} else if counter == 1 {
+						counter++
+						return cw.reducer.GetInputValueTypeConverter().FromBytes(v2), nil
+					}
+					return nil, errors.New(mapred.ErrorNoMoreKey)
+				},
 			}
-			res = cw.reducer.GetOutputValueTypeConverter().ToBytes(v)
-			alreadyOutput = true
+			alreadyOutput := false
+			collectFunc := func(v interface{}) {
+				if alreadyOutput {
+					log.Errorf("value of key: %v has been collected", key)
+					return
+				}
+				res = cw.reducer.GetOutputValueTypeConverter().ToBytes(v)
+				alreadyOutput = true
+			}
+			combiner.Reduce(cw.reducer.GetInputKeyTypeConverter().FromBytes(key), nextIter, collectFunc, nil)
+			if res == nil {
+				log.Fatal("Combine function should not produce none")
+			}
+			return res
 		}
-		cw.reducer.Reduce(cw.reducer.GetInputKeyTypeConverter().FromBytes(key), nextIter, collectFunc, nil)
-		return res
+	} else {
+		cw.combineFunc = nil
 	}
 }
 
@@ -74,8 +81,12 @@ func (cw *ComputeWrapClass) sortAndCombine(aggregated []*records.Record) []*reco
 		return aggregated
 	}
 	combined := make([]*records.Record, 0)
-	curRecord := &records.Record{}
+	var curRecord *records.Record
 	for _, r := range aggregated {
+		if curRecord == nil {
+			curRecord = r
+			continue
+		}
 		if !bytes.Equal(curRecord.Key, r.Key) {
 			if curRecord.Key != nil {
 				combined = append(combined, curRecord)
@@ -85,7 +96,7 @@ func (cw *ComputeWrapClass) sortAndCombine(aggregated []*records.Record) []*reco
 			curRecord.Value = cw.combineFunc(curRecord.Key, curRecord.Value, r.Value)
 		}
 	}
-	if curRecord.Key != nil {
+	if curRecord != nil && curRecord.Key != nil {
 		combined = append(combined, curRecord)
 	}
 	return combined
@@ -174,8 +185,12 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 	sorted := make(chan *records.Record, 1024)
 	go records.MergeSort(readers, sorted)
 
-	curRecord := &records.Record{}
+	var curRecord *records.Record
 	for r := range sorted {
+		if curRecord == nil {
+			curRecord = r
+			continue
+		}
 		if cw.combineFunc == nil || !bytes.Equal(curRecord.Key, r.Key) {
 			if curRecord.Key != nil {
 				rBucketID := util.HashBytesKey(curRecord.Key) % nReduce
@@ -186,7 +201,7 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 			curRecord.Value = cw.combineFunc(curRecord.Key, curRecord.Value, r.Value)
 		}
 	}
-	if curRecord.Key != nil {
+	if curRecord != nil && curRecord.Key != nil {
 		rBucketID := util.HashBytesKey(curRecord.Key) % nReduce
 		writers[rBucketID].WriteRecord(curRecord)
 	}

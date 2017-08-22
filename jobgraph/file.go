@@ -9,6 +9,7 @@ import (
 type Files interface {
 	GetFiles() []string
 	GetType() string
+	GetBucketType() int
 }
 
 type InterFileNameGenerator struct {
@@ -53,9 +54,16 @@ func (i *InterFileNameGenerator) GetReducerInputFiles(reducerIdx int) []string {
 	return res
 }
 
+const (
+	MapBucket = iota
+	ReduceBucket
+	InterBucket
+)
+
 type fileNameGenerator struct {
-	mrNode    *MapReduceNode
-	fileCount int
+	mrNode     *MapReduceNode
+	fileCount  int
+	bucketType int
 }
 
 func (f *fileNameGenerator) GetFiles() []string {
@@ -70,6 +78,14 @@ func (f *fileNameGenerator) GetType() string {
 	return "stream"
 }
 
+func (f *fileNameGenerator) GetBucketType() int {
+	return f.bucketType
+}
+
+func (f *fileNameGenerator) SetBucketType(t int) {
+	f.bucketType = t
+}
+
 // InputFiles Define input files
 type InputFiles struct {
 	Files []string
@@ -82,4 +98,8 @@ func (f *InputFiles) GetFiles() []string {
 
 func (f *InputFiles) GetType() string {
 	return f.Type
+}
+
+func (f *InputFiles) GetBucketType() int {
+	return MapBucket
 }

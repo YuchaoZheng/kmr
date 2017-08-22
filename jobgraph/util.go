@@ -35,6 +35,9 @@ func combineMappers(mappers ...mapred.Mapper) mapred.Mapper {
 				return mappers[0]
 			} else {
 				return &combinedMapper{
+					MapperCommon: mapred.MapperCommon{
+						TypeConverters: *mappers[0].GetTypeConverters(),
+					},
 					FirstMapper:  mappers[0],
 					SecondMapper: combined,
 				}

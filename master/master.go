@@ -7,8 +7,8 @@ import (
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/jobgraph"
-	"github.com/naturali/kmr/util/log"
 	kmrpb "github.com/naturali/kmr/pb"
+	"github.com/naturali/kmr/util/log"
 
 	"golang.org/x/net/context"
 	"google.golang.org/grpc"
@@ -23,11 +23,17 @@ const (
 	HeartBeatTimeout = 20 * time.Second
 )
 
+type heartBeatInput struct {
+	heartBeatCode int
+	task          TaskDescription
+}
+
 // Master is a map-reduce controller. It stores the state for each task and other runtime progress statuses.
 type Master struct {
+	sync.Mutex
 	port string // Master listening port, like ":50051"
 
-	heartbeat     map[int64]chan int // Heartbeat channel for each worker
+	heartbeat     map[int64]chan heartBeatInput // Heartbeat channel for each worker
 	workerTaskMap map[int64]TaskDescription
 
 	job       *jobgraph.Job
@@ -37,11 +43,23 @@ type Master struct {
 	waitFinish                           sync.WaitGroup
 }
 
-func (m *Master) TaskSucceeded(jobDesc *jobgraph.JobDescription) error {
+func (m *Master) TaskSucceeded(t TaskDescription) error {
 	return nil
 }
 
-func (m *Master) TaskFailed(jobDesc *jobgraph.JobDescription) error {
+func (m *Master) TaskFailed(t TaskDescription) error {
+	return nil
+}
+
+func (m *Master) getBucket(files jobgraph.Files) bucket.Bucket {
+	switch files.GetBucketType() {
+	case jobgraph.MapBucket:
+		return m.mapBucket
+	case jobgraph.ReduceBucket:
+		return m.reduceBucket
+	case jobgraph.InterBucket:
+		return m.interBucket
+	}
 	return nil
 }
 
@@ -55,7 +73,7 @@ func (m *Master) MapReduceNodeSucceed(node *jobgraph.MapReduceNode) error {
 	// Delete previous node output files
 	if p := node.GetPrev(); p != nil {
 		for _, file := range p.GetOutputFiles().GetFiles() {
-			m.reduceBucket.Delete(file)
+			m.getBucket(p.GetOutputFiles()).Delete(file)
 		}
 	}
 	return nil
@@ -84,7 +102,7 @@ func (m *Master) JobFinished(job *jobgraph.Job) {
 // will releases the task, so that another work can takeover
 // Master will check the heartbeat every 5 seconds. If m cannot detect any heartbeat in the meantime, master
 // regards it as a DEAD worker.
-func (m *Master) CheckHeartbeatForEachWorker(workerID int64, heartbeat chan int) {
+func (m *Master) CheckHeartbeatForEachWorker(workerID int64, heartbeat chan heartBeatInput) {
 	for {
 		timeout := time.After(HeartBeatTimeout)
 		select {
@@ -92,18 +110,17 @@ func (m *Master) CheckHeartbeatForEachWorker(workerID int64, heartbeat chan int)
 			// the worker fuck up, release the task
 			log.Error("Worker: ", workerID, "fuck up")
 			m.scheduler.ReportTask(m.workerTaskMap[workerID], ResultFailed)
-			delete(m.workerTaskMap, workerID)
 			return
-		case heartbeatCode := <-heartbeat:
+		case hb := <-heartbeat:
 			// the worker is doing his job
-			switch heartbeatCode {
+			switch hb.heartBeatCode {
 			case HeartBeatCodeDead:
 				log.Error("Worker: ", workerID, "fuck up")
-				m.scheduler.ReportTask(m.workerTaskMap[workerID], ResultFailed)
-				delete(m.workerTaskMap, workerID)
+				m.scheduler.ReportTask(hb.task, ResultFailed)
 				return
 			case HeartBeatCodeFinished:
-				m.scheduler.ReportTask(m.workerTaskMap[workerID], ResultOK)
+				log.Error("Worker: ", workerID, "finish task", hb.task)
+				m.scheduler.ReportTask(hb.task, ResultOK)
 				return
 			case HeartBeatCodePulse:
 				continue
@@ -134,18 +151,29 @@ func (m *Master) Run() {
 }
 
 type server struct {
+	sync.Mutex
 	master *Master
 }
 
 // RequestTask is to deliver a task to worker.
 func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*kmrpb.Task, error) {
+	s.master.Lock()
+	defer s.master.Unlock()
 	t, err := s.master.scheduler.RequestTask()
-	s.master.heartbeat[in.WorkerID] = make(chan int, 10)
+	if err != nil {
+		return &kmrpb.Task{
+			Retcode: -1,
+		}, err
+	}
+	if _, ok := s.master.heartbeat[in.WorkerID]; !ok {
+		s.master.heartbeat[in.WorkerID] = make(chan heartBeatInput, 10)
+	}
 	s.master.workerTaskMap[in.WorkerID] = t
 	go s.master.CheckHeartbeatForEachWorker(in.WorkerID, s.master.heartbeat[in.WorkerID])
-	log.Infof("deliver a task Jobname: %v MapredNodeID: %v Phase: %v", t.JobNodeName, t.MapReduceNodeIndex, t.Phase)
+	log.Infof("deliver a task Jobname: %v MapredNodeID: %v Phase: %v PhaseSubIndex: %v to %v",
+		t.JobNodeName, t.MapReduceNodeIndex, t.Phase, t.PhaseSubIndex, in.WorkerID)
 	return &kmrpb.Task{
-		Retcode: -1,
+		Retcode: 0,
 		Taskinfo: &kmrpb.TaskInfo{
 			JobNodeName:     t.JobNodeName,
 			MapredNodeIndex: t.MapReduceNodeIndex,
@@ -157,7 +185,11 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 
 // ReportTask is for executor to report its progress state to master.
 func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.Response, error) {
-	if _, ok := s.master.workerTaskMap[in.WorkerID]; !ok {
+	s.master.Lock()
+	defer s.master.Unlock()
+	var t TaskDescription
+	var ok bool
+	if t, ok = s.master.workerTaskMap[in.WorkerID]; !ok {
 		log.Errorf("WorkerID %v is not working on anything", in.WorkerID)
 		return &kmrpb.Response{Retcode: 0}, nil
 	}
@@ -165,27 +197,29 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 	var heartbeatCode int
 	switch in.Retcode {
 	case kmrpb.ReportInfo_FINISH:
+		delete(s.master.workerTaskMap, in.WorkerID)
 		heartbeatCode = HeartBeatCodeFinished
 	case kmrpb.ReportInfo_DOING:
 		heartbeatCode = HeartBeatCodePulse
 	case kmrpb.ReportInfo_ERROR:
+		delete(s.master.workerTaskMap, in.WorkerID)
 		heartbeatCode = HeartBeatCodeDead
 	default:
 		panic("unknown ReportInfo")
 	}
-	go func(ch chan<- int) {
-		ch <- heartbeatCode
+	go func(ch chan<- heartBeatInput) {
+		ch <- heartBeatInput{heartbeatCode, t}
 	}(s.master.heartbeat[in.WorkerID])
 
 	return &kmrpb.Response{Retcode: 0}, nil
 }
 
 // NewMaster Create a master, waiting for workers
-func NewMaster(job *jobgraph.Job, port string, mapBucket, interBucket, reduceBucket *bucket.Bucket) *Master {
+func NewMaster(job *jobgraph.Job, port string, mapBucket, interBucket, reduceBucket bucket.Bucket) *Master {
 	m := &Master{
 		port:          port,
 		workerTaskMap: make(map[int64]TaskDescription),
-		heartbeat:     make(map[int64]chan int),
+		heartbeat:     make(map[int64]chan heartBeatInput),
 		job:           job,
 		mapBucket:     mapBucket,
 		interBucket:   interBucket,

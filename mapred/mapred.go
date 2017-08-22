@@ -40,6 +40,7 @@ type Mapper interface {
 	InputOutputTypeConverter
 	mapperReducer
 	Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{})
+	GetTypeConverters() *TypeConverters
 }
 
 // Reducer Reducer interface
@@ -47,6 +48,7 @@ type Reducer interface {
 	InputOutputTypeConverter
 	mapperReducer
 	Reduce(key interface{}, valuesNext ValueIterator, output func(v interface{}), reporter interface{})
+	GetTypeConverters() *TypeConverters
 }
 
 // TypeConverters Define type converters for mapper and reducer, so user defined mapper/reducer will not need to handle []byte.
@@ -86,6 +88,10 @@ type MapperCommon struct {
 func (tb *MapperCommon) Init() {
 }
 
+func (tb *MapperCommon) GetTypeConverters() *TypeConverters {
+	return &tb.TypeConverters
+}
+
 // ReducerCommon Every implemention of Reducer interface should embeded this struct
 type ReducerCommon struct {
 	// TypeConverters Declare the type converters which will help to handle raw []byte
@@ -95,3 +101,8 @@ type ReducerCommon struct {
 // Init default empty init function
 func (tb *ReducerCommon) Init() {
 }
+
+func (tb *ReducerCommon) GetTypeConverters() *TypeConverters {
+	return &tb.TypeConverters
+}
+

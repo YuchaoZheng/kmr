@@ -8,15 +8,17 @@ import (
 )
 
 type MapReduceNode struct {
-	index   int
-	mapper  mapred.Mapper
-	reducer mapred.Reducer
-	jobNode *JobNode
+	index    int
+	mapper   mapred.Mapper
+	reducer  mapred.Reducer
+	combiner mapred.Reducer
+	jobNode  *JobNode
 
-	mapperBatchSize         int
-	reducerCount            int
-	interFiles              InterFileNameGenerator
-	inputFiles, outputFiles Files
+	mapperBatchSize int
+	reducerCount    int
+	interFiles      InterFileNameGenerator
+	inputFiles      Files
+	outputFiles     *fileNameGenerator
 
 	chainPrev, chainNext *MapReduceNode
 }
@@ -58,6 +60,10 @@ func (node *MapReduceNode) GetInputFiles() Files {
 
 func (node *MapReduceNode) GetOutputFiles() Files {
 	return node.outputFiles
+}
+
+func (node *MapReduceNode) GetCombiner() mapred.Reducer {
+	return node.combiner
 }
 
 func (node *MapReduceNode) GetInterFileNameGenerator() *InterFileNameGenerator {
@@ -111,6 +117,8 @@ func (n *JobNode) AddMapper(mapper mapred.Mapper, batchSize int) *JobNode {
 		}
 		mrnode.interFiles.mrNode = mrnode
 		n.graph.mrNodeIndex++
+
+		n.endNode.outputFiles.bucketType = InterBucket
 		n.endNode.chainNext = mrnode
 		n.endNode = mrnode
 		n.graph.mrNodes = append(n.graph.mrNodes, mrnode)
@@ -138,22 +146,32 @@ func (n *JobNode) AddReducer(reducer mapred.Reducer, num int) *JobNode {
 		}
 		mrnode.interFiles.mrNode = mrnode
 		n.graph.mrNodeIndex++
+		n.endNode.outputFiles.bucketType = InterBucket
 		n.endNode.chainNext = mrnode
 		n.endNode = mrnode
 		n.graph.mrNodes = append(n.graph.mrNodes, mrnode)
 	} else {
 		//use origin
 		n.endNode.reducer = reducer
+		if n.endNode.mapper == nil {
+			n.endNode.mapper = IdentityMapper
+			n.endNode.mapperBatchSize = 1
+		}
 	}
-	n.endNode.outputFiles = &fileNameGenerator{n.endNode, num}
+	n.endNode.outputFiles = &fileNameGenerator{n.endNode, num, ReduceBucket}
 	n.endNode.reducerCount = num
+	return n
+}
+
+func (n *JobNode) SetCombiner(combiner mapred.Reducer) *JobNode {
+	n.endNode.combiner = combiner
 	return n
 }
 
 func (n *JobNode) DependOn(nodes ...*JobNode) *JobNode {
 	n.dependencies = append(n.dependencies, nodes...)
-	for _, n := range nodes {
-		n.dependencyOf = append(n.dependencyOf, n)
+	for _, node := range nodes {
+		node.dependencyOf = append(node.dependencyOf, n)
 	}
 	return n
 }
@@ -202,12 +220,12 @@ func (j *Job) AddJobNode(inputs Files, name string) *JobNode {
 		index:           j.mrNodeIndex,
 		jobNode:         jobNode,
 		inputFiles:      inputs,
-		mapper:          IdentityMapper,
+		mapper:          nil,
 		mapperBatchSize: 0,
 	}
 	j.mrNodeIndex++
 
-	mrNode.outputFiles = &fileNameGenerator{mrNode, 0}
+	mrNode.outputFiles = &fileNameGenerator{mrNode, 0, ReduceBucket}
 	mrNode.interFiles.mrNode = mrNode
 
 	jobNode.startNode = mrNode
@@ -303,7 +321,7 @@ func (j *Job) GetMapReduceNode(jobNodeName string, mapredIndex int) *MapReduceNo
 
 func (j *Job) SetName(name string) {
 	for _, c := range []rune(name) {
-		if !unicode.IsLower(c) || c == rune('-') {
+		if !unicode.IsLower(c) && c != rune('-') {
 			log.Fatal("Job name should only contain lowercase and '-'")
 		}
 	}

@@ -36,7 +36,7 @@ func (v Uint64) FromBytes(b []byte) interface{} {
 	if len(b) != 8 {
 		log.Fatalf("Convert %v failed", b)
 	} else {
-		return binary.LittleEndian.Uint64(b)
+		return binary.BigEndian.Uint64(b)
 	}
 	return nil
 }
@@ -45,7 +45,7 @@ func (v Uint64) FromBytes(b []byte) interface{} {
 func (v Uint64) ToBytes(val interface{}) []byte {
 	if res, ok := val.(uint64); ok {
 		b := make([]byte, 8)
-		binary.LittleEndian.PutUint64(b, res)
+		binary.BigEndian.PutUint64(b, res)
 		return b
 	}
 	log.Fatalf("Convert %v failed", v)
@@ -58,7 +58,7 @@ func (v Int64) FromBytes(b []byte) interface{} {
 		log.Fatalf("Convert %v failed", b)
 	} else {
 		var val int64
-		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &val); err == nil {
+		if err := binary.Read(bytes.NewBuffer(b), binary.BigEndian, &val); err == nil {
 			return val
 		}
 		log.Fatalf("Convert %v failed", b)
@@ -70,7 +70,7 @@ func (v Int64) FromBytes(b []byte) interface{} {
 func (v Int64) ToBytes(val interface{}) []byte {
 	if res, ok := val.(int64); ok {
 		b := make([]byte, 8)
-		binary.Write(bytes.NewBuffer(b), binary.LittleEndian, res)
+		binary.Write(bytes.NewBuffer(b), binary.BigEndian, res)
 		return b
 	}
 	log.Fatalf("Convert %v failed", v)
@@ -111,7 +111,7 @@ func (Int32) FromBytes(b []byte) interface{} {
 		log.Fatalf("Convert %v failed", b)
 	} else {
 		var val int32
-		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &val); err == nil {
+		if err := binary.Read(bytes.NewBuffer(b), binary.BigEndian, &val); err == nil {
 			return val
 		}
 		log.Fatalf("Convert %v failed", b)
@@ -123,7 +123,7 @@ func (Int32) FromBytes(b []byte) interface{} {
 func (Int32) ToBytes(val interface{}) []byte {
 	if res, ok := val.(int32); ok {
 		wt := new(bytes.Buffer)
-		binary.Write(wt, binary.LittleEndian, res)
+		binary.Write(wt, binary.BigEndian, res)
 		return wt.Bytes()
 	}
 	log.Fatalf("Convert %v failed", val)
@@ -136,7 +136,7 @@ func (Uint32) FromBytes(b []byte) interface{} {
 		log.Fatalf("Convert %v failed", b)
 	} else {
 		var val uint32
-		if err := binary.Read(bytes.NewBuffer(b), binary.LittleEndian, &val); err == nil {
+		if err := binary.Read(bytes.NewBuffer(b), binary.BigEndian, &val); err == nil {
 			return val
 		}
 		log.Fatalf("Convert %v failed", b)
@@ -148,7 +148,7 @@ func (Uint32) FromBytes(b []byte) interface{} {
 func (Uint32) ToBytes(val interface{}) []byte {
 	if res, ok := val.(uint32); ok {
 		wt := new(bytes.Buffer)
-		binary.Write(wt, binary.LittleEndian, res)
+		binary.Write(wt, binary.BigEndian, res)
 		return wt.Bytes()
 	}
 	log.Fatalf("Convert %v failed", val)
