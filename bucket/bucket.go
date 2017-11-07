@@ -22,6 +22,7 @@ type Bucket interface {
 	OpenRead(key string) (ObjectReader, error)
 	OpenWrite(key string) (ObjectWriter, error)
 	Delete(key string) error
+	ListFiles() ([]string, error)
 }
 
 // NewBucket Bucket factory
@@ -83,6 +84,24 @@ func NewBucket(bucketType string, config map[string]interface{}) (Bucket, error)
 		}
 		return NewAzureBlobBucket(accountName.(string), accountKey.(string), containerName.(string),
 			blobServiceBaseUrl.(string), apiVersion.(string), useHttps.(bool), blobNamePrefix.(string))
+	case "aliblob":
+		accessKeyId, ok := config["accessKeyId"].(string)
+		if !ok {
+			return nil, fmt.Errorf("accessKeyId is not provided")
+		}
+		accessKeySecret, ok := config["accessKeySecret"].(string)
+		if !ok {
+			return nil, fmt.Errorf("accessKeySecret is not provided")
+		}
+		endPoint, ok := config["endPoint"].(string)
+		if !ok {
+			return nil, fmt.Errorf("endPoint is not provided")
+		}
+		bucketName, ok := config["bucketName"].(string)
+		if !ok {
+			return nil, fmt.Errorf("bucketName is not provided")
+		}
+		return NewAliBlobBucket(endPoint, accessKeyId, accessKeySecret, bucketName)
 	default:
 		return nil, fmt.Errorf("Unknown bucket type \"%s\"", bucketType)
 	}

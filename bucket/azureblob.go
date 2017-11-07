@@ -2,6 +2,7 @@ package bucket
 
 import (
 	"encoding/base64"
+	"errors"
 	"io"
 	"strconv"
 
@@ -120,4 +121,8 @@ func (bk *AzureBlobBucket) Delete(key string) error {
 	blob := bk.container.GetBlobReference(key)
 	_, err := blob.DeleteIfExists(&storage.DeleteBlobOptions{})
 	return err
+}
+
+func (bk *AzureBlobBucket) ListFiles() ([]string, error) {
+	return nil, errors.New("azure list file is not implemented")
 }

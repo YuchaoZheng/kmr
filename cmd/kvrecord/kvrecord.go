@@ -21,9 +21,9 @@ func convert(b []byte, t string) (string, error) {
 	case "string":
 		return string(b), nil
 	case "uint32":
-		return strconv.FormatUint(uint64(binary.LittleEndian.Uint32(b)), 10), nil
+		return strconv.FormatUint(uint64(binary.BigEndian.Uint32(b)), 10), nil
 	case "uint64":
-		return strconv.FormatUint(binary.LittleEndian.Uint64(b), 10), nil
+		return strconv.FormatUint(binary.BigEndian.Uint64(b), 10), nil
 	default:
 		return "", errIgnore
 	}
@@ -59,6 +59,5 @@ func main() {
 			}
 			break
 		}
-		fmt.Println(string(r.Key), string(r.Value))
 	}
 }

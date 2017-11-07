@@ -7,31 +7,30 @@ import (
 
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	v1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
-	"k8s.io/client-go/pkg/api/v1"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/pkg/api/v1"
+	v1beta1 "k8s.io/client-go/pkg/apis/extensions/v1beta1"
 	"k8s.io/client-go/rest"
 )
 
 type K8sWorkerConfig struct {
 	Name         string
 	CPULimit     string
-	BinaryPath      string
+	BinaryPath   string
 	Image        string
 	Volumes      []map[string]interface{} `json:"volumes,omitempty" patchStrategy:"merge"`
 	VolumeMounts []map[string]interface{} `json:"volumeMounts,omitempty" patchStrategy:"merge" patchMergeKey:"mountPath"`
 	Namespace    string
 	K8sConfig    rest.Config
-	WorkerNum int
-	RandomSeed int64
-	Command []string
+	WorkerNum    int
+	RandomSeed   int64
+	Command      []string
 }
 
 type K8sWorkerCtl struct {
 	config    K8sWorkerConfig
 	k8sclient *kubernetes.Clientset
 }
-
 
 func (w *K8sWorkerCtl) newReplicaSet(name string, command []string, image string, replicas int32) v1beta1.ReplicaSet {
 	// generate resourceRequirements
@@ -133,8 +132,8 @@ func (w *K8sWorkerCtl) StopWorkers() error {
 	falseVal := false
 	return w.k8sclient.ExtensionsV1beta1().ReplicaSets(w.config.Namespace).
 		Delete(w.replicaSetName(w.config.Name), &metav1.DeleteOptions{
-		OrphanDependents: &falseVal,
-	})
+			OrphanDependents: &falseVal,
+		})
 }
 func (w *K8sWorkerCtl) GetWorkerNum() int {
 	return w.config.WorkerNum
