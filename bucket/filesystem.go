@@ -1,6 +1,7 @@
 package bucket
 
 import (
+	"errors"
 	"log"
 	"os"
 	"path/filepath"
@@ -77,4 +78,7 @@ func (fsb FSBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 // Delete Delete object in bucket
 func (fsb FSBucket) Delete(key string) error {
 	return os.Remove(filepath.Join(fsb.directory, key))
+}
+func (fsb FSBucket) ListFiles() ([]string, error) {
+	return nil, errors.New("fs list file is not implemented")
 }
