@@ -3,9 +3,9 @@ package main
 import (
 	"unicode"
 
+	"github.com/naturali/kmr/cli"
 	"github.com/naturali/kmr/jobgraph"
 	"github.com/naturali/kmr/mapred"
-	"github.com/naturali/kmr/cli"
 )
 
 const (

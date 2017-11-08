@@ -11,7 +11,7 @@ type MapReduceNode struct {
 	index    int
 	mapper   mapred.Mapper
 	reducer  mapred.Reducer
-	combiner mapred.Reducer
+	combiner mapred.Combiner
 	jobNode  *JobNode
 
 	mapperBatchSize int
@@ -62,7 +62,7 @@ func (node *MapReduceNode) GetOutputFiles() Files {
 	return node.outputFiles
 }
 
-func (node *MapReduceNode) GetCombiner() mapred.Reducer {
+func (node *MapReduceNode) GetCombiner() mapred.Combiner {
 	return node.combiner
 }
 
@@ -163,7 +163,7 @@ func (n *JobNode) AddReducer(reducer mapred.Reducer, num int) *JobNode {
 	return n
 }
 
-func (n *JobNode) SetCombiner(combiner mapred.Reducer) *JobNode {
+func (n *JobNode) SetCombiner(combiner mapred.Combiner) *JobNode {
 	n.endNode.combiner = combiner
 	return n
 }

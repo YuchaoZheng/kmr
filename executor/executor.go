@@ -22,9 +22,9 @@ const (
 )
 
 type ComputeWrapClass struct {
-	mapper      mapred.Mapper
-	reducer     mapred.Reducer
-	combineFunc func(key []byte, v1 []byte, v2 []byte) []byte
+	mapper   mapred.Mapper
+	reducer  mapred.Reducer
+	combiner mapred.Combiner
 }
 
 func (cw *ComputeWrapClass) BindMapper(mapper mapred.Mapper) {
@@ -35,68 +35,46 @@ func (cw *ComputeWrapClass) BindReducer(reducer mapred.Reducer) {
 	cw.reducer = reducer
 }
 
-func (cw *ComputeWrapClass) BindCombiner(combiner mapred.Reducer) {
-	// TODO: should use reducer directly
-	if combiner != nil {
-		cw.combineFunc = func(key []byte, v1 []byte, v2 []byte) []byte {
-			var res []byte
-			counter := 0
-			nextIter := &ValueIteratorFunc{
-				IterFunc: func() (interface{}, error) {
-					if counter == 0 {
-						counter++
-						return cw.reducer.GetInputValueTypeConverter().FromBytes(v1), nil
-					} else if counter == 1 {
-						counter++
-						return cw.reducer.GetInputValueTypeConverter().FromBytes(v2), nil
-					}
-					return nil, errors.New(mapred.ErrorNoMoreKey)
-				},
-			}
-			alreadyOutput := false
-			collectFunc := func(v interface{}) {
-				if alreadyOutput {
-					log.Errorf("value of key: %v has been collected", key)
-					return
-				}
-				res = cw.reducer.GetOutputValueTypeConverter().ToBytes(v)
-				alreadyOutput = true
-			}
-			combiner.Reduce(cw.reducer.GetInputKeyTypeConverter().FromBytes(key), nextIter, collectFunc, nil)
-			if res == nil {
-				log.Fatal("Combine function should not produce none")
-			}
-			return res
-		}
-	} else {
-		cw.combineFunc = nil
-	}
+func (cw *ComputeWrapClass) BindCombiner(combiner mapred.Combiner) {
+	cw.combiner = combiner
 }
 
 func (cw *ComputeWrapClass) sortAndCombine(aggregated []*records.Record) []*records.Record {
 	sort.Slice(aggregated, func(i, j int) bool {
 		return bytes.Compare(aggregated[i].Key, aggregated[j].Key) < 0
 	})
-	if cw.combineFunc == nil {
+	if cw.combiner == nil {
 		return aggregated
 	}
+	keyClass, valueClass := cw.combiner.GetInputKeyTypeConverter(), cw.combiner.GetInputValueTypeConverter()
 	combined := make([]*records.Record, 0)
 	var curRecord *records.Record
+	var valueInterface interface{}
+	var keyInterface interface{}
+	outputFunc := func(v interface{}) {
+		valueInterface = v
+	}
 	for _, r := range aggregated {
 		if curRecord == nil {
 			curRecord = r
+			keyInterface = keyClass.FromBytes(r.Key)
+			valueInterface = valueClass.FromBytes(r.Value)
 			continue
 		}
 		if !bytes.Equal(curRecord.Key, r.Key) {
 			if curRecord.Key != nil {
+				curRecord.Value = valueClass.ToBytes(valueInterface)
 				combined = append(combined, curRecord)
 			}
 			curRecord = r
+			keyInterface = keyClass.FromBytes(r.Key)
+			valueInterface = valueClass.FromBytes(r.Value)
 		} else {
-			curRecord.Value = cw.combineFunc(curRecord.Key, curRecord.Value, r.Value)
+			cw.combiner.Combine(keyInterface, valueInterface, valueClass.FromBytes(r.Value), outputFunc)
 		}
 	}
 	if curRecord != nil && curRecord.Key != nil {
+		curRecord.Value = valueClass.ToBytes(valueInterface)
 		combined = append(combined, curRecord)
 	}
 	return combined
@@ -186,19 +164,26 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 	go records.MergeSort(readers, sorted)
 
 	var curRecord *records.Record
+	combinerKeyClass, combinerValueClass :=
+		cw.combiner.GetInputKeyTypeConverter(), cw.combiner.GetInputValueTypeConverter()
+	outputFunc := func(v interface{}) {
+		curRecord.Value = combinerValueClass.ToBytes(v)
+	}
 	for r := range sorted {
 		if curRecord == nil {
 			curRecord = r
 			continue
 		}
-		if cw.combineFunc == nil || !bytes.Equal(curRecord.Key, r.Key) {
+		if cw.combiner == nil || !bytes.Equal(curRecord.Key, r.Key) {
 			if curRecord.Key != nil {
 				rBucketID := util.HashBytesKey(curRecord.Key) % nReduce
 				writers[rBucketID].WriteRecord(curRecord)
 			}
 			curRecord = r
 		} else {
-			curRecord.Value = cw.combineFunc(curRecord.Key, curRecord.Value, r.Value)
+			cw.combiner.Combine(
+				combinerKeyClass.FromBytes(curRecord.Key), combinerValueClass.FromBytes(curRecord.Value),
+				combinerValueClass.FromBytes(r.Value), outputFunc)
 		}
 	}
 	if curRecord != nil && curRecord.Key != nil {
