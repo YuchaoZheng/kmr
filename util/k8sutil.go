@@ -41,12 +41,13 @@ func CreateDockerImage(assetFolder, registry string, tags []string, includeFiles
 	log.Info("Dockerfile is:\n", dockerFileContent)
 	defer os.Remove(df)
 
-	args := []string{"build", path.Dir(df), "-f", df}
+	args := []string{"build", "-f", df}
 	for i, tag := range tags {
 		fn := registry + "/" + tag
 		tags[i] = fn
 		args = append(args, "-t", fn)
 	}
+	args = append(args, path.Dir(df))
 	log.Info("Build command:", args)
 	cmd := exec.Command("docker", args...)
 	cmd.Stdout = os.Stdout
@@ -94,7 +95,7 @@ func CreateK8sKMRJob(jobName, serviceAccountName, namespace string, podDesc conf
 			Name: jobName,
 			Labels: map[string]string{
 				"kmr.jobname": jobName,
-				"kmr.master" : jobName + "-master",
+				"kmr.master":  jobName + "-master",
 				"app":         "kmr-master",
 			},
 		},
@@ -139,7 +140,7 @@ func CreateK8sKMRJob(jobName, serviceAccountName, namespace string, podDesc conf
 				},
 			},
 			Selector: map[string]string{
-				"kmr.master" : jobName + "-master",
+				"kmr.master": jobName + "-master",
 			},
 		},
 	}
