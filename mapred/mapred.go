@@ -51,6 +51,13 @@ type Reducer interface {
 	GetTypeConverters() *TypeConverters
 }
 
+type Combiner interface {
+	InputOutputTypeConverter
+	mapperReducer
+	Combine(key interface{}, v1 interface{}, v2 interface{}, output func(v interface{}))
+	GetTypeConverters() *TypeConverters
+}
+
 // TypeConverters Define type converters for mapper and reducer, so user defined mapper/reducer will not need to handle []byte.
 type TypeConverters struct {
 	InputKeyTypeConverter    TypeConverter
@@ -106,3 +113,14 @@ func (tb *ReducerCommon) GetTypeConverters() *TypeConverters {
 	return &tb.TypeConverters
 }
 
+type CombineCommon struct {
+	TypeConverters
+}
+
+// Init default empty init function
+func (tb *CombineCommon) Init() {
+}
+
+func (tb *CombineCommon) GetTypeConverters() *TypeConverters {
+	return &tb.TypeConverters
+}
