@@ -321,8 +321,8 @@ func (j *Job) GetMapReduceNode(jobNodeName string, mapredIndex int) *MapReduceNo
 
 func (j *Job) SetName(name string) {
 	for _, c := range []rune(name) {
-		if !unicode.IsLower(c) && c != rune('-') {
-			log.Fatal("Job name should only contain lowercase and '-'")
+		if !unicode.IsLower(c) && c != rune('-') && !unicode.IsDigit(c) {
+			log.Fatal("Job name should only contain lowercase, number and '-'")
 		}
 	}
 	j.name = name
