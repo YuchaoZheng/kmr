@@ -24,7 +24,7 @@ func (w *LocalWorkerCtl) InspectWorker(workernum int) string {
 func (w *LocalWorkerCtl) StartWorkers(num int) error {
 	for i := 0; i < num; i++ {
 		workerID := rand.Int63()
-		ew := executor.NewWorker(w.j, workerID, "localhost:"+strconv.Itoa(w.port), w.flushOutSize, w.buckets[0], w.buckets[1], w.buckets[2])
+		ew := executor.NewWorker(w.j, workerID, "localhost:"+strconv.Itoa(w.port), w.flushOutSize, w.buckets[0], w.buckets[1], w.buckets[2], w.buckets[3])
 		w.workers = append(w.workers, ew)
 		go ew.Run()
 	}

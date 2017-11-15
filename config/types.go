@@ -18,12 +18,14 @@ type LocalConfig struct {
 	MapBucket    *BucketDescription `json:"mapBucket"`
 	InterBucket  *BucketDescription `json:"interBucket"`
 	ReduceBucket *BucketDescription `json:"reduceBucket"`
+	FlushBucket  *BucketDescription `json:"flushBucket"`
 }
 
 type RemoteConfig struct {
 	MapBucket    *BucketDescription `json:"mapBucket"`
 	InterBucket  *BucketDescription `json:"interBucket"`
 	ReduceBucket *BucketDescription `json:"reduceBucket"`
+	FlushBucket  *BucketDescription `json:"flushBucket"`
 	PodDesc      *PodDescription    `json:"podDescription"`
 
 	DockerRegistry *string `json:"dockerRegistry"`

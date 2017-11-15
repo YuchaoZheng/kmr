@@ -35,15 +35,21 @@ type Master struct {
 
 	heartbeat     map[int64]chan heartBeatInput // Heartbeat channel for each worker
 	workerTaskMap map[int64]TaskDescription
+	workerNameMap map[int64]string
 
 	job       *jobgraph.Job
 	scheduler Scheduler
 
 	mapBucket, interBucket, reduceBucket bucket.Bucket
 	waitFinish                           sync.WaitGroup
+
+	ck *CheckPoint
 }
 
 func (m *Master) TaskSucceeded(t TaskDescription) error {
+	if m.ck != nil {
+		m.ck.AddCompletedJob(t)
+	}
 	return nil
 }
 
@@ -159,19 +165,34 @@ type server struct {
 func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*kmrpb.Task, error) {
 	s.master.Lock()
 	defer s.master.Unlock()
-	t, err := s.master.scheduler.RequestTask()
-	if err != nil {
-		return &kmrpb.Task{
-			Retcode: -1,
-		}, err
+	var t TaskDescription
+	var err error
+
+	for {
+		t, err = s.master.scheduler.RequestTask()
+		if err != nil {
+			return &kmrpb.Task{
+				Retcode: -1,
+			}, err
+		}
+		if s.master.ck != nil && s.master.ck.IsJobCompleted(t) {
+			log.Info("Job", t, "had been finished according to checkpoint")
+			go func(taskDesc TaskDescription) {
+				s.master.scheduler.ReportTask(taskDesc, ResultOK)
+			}(t)
+		} else {
+			break
+		}
 	}
+
+	s.master.workerNameMap[in.WorkerID] = in.WorkerName
 	if _, ok := s.master.heartbeat[in.WorkerID]; !ok {
 		s.master.heartbeat[in.WorkerID] = make(chan heartBeatInput, 10)
 	}
 	s.master.workerTaskMap[in.WorkerID] = t
 	go s.master.CheckHeartbeatForEachWorker(in.WorkerID, s.master.heartbeat[in.WorkerID])
-	log.Infof("deliver a task Jobname: %v MapredNodeID: %v Phase: %v PhaseSubIndex: %v to %v",
-		t.JobNodeName, t.MapReduceNodeIndex, t.Phase, t.PhaseSubIndex, in.WorkerID)
+	log.Infof("deliver a task Jobname: %v MapredNodeID: %v Phase: %v PhaseSubIndex: %v to %v:%v",
+		t.JobNodeName, t.MapReduceNodeIndex, t.Phase, t.PhaseSubIndex, in.WorkerID, in.WorkerName)
 	return &kmrpb.Task{
 		Retcode: 0,
 		Taskinfo: &kmrpb.TaskInfo{
@@ -215,15 +236,17 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 }
 
 // NewMaster Create a master, waiting for workers
-func NewMaster(job *jobgraph.Job, port string, mapBucket, interBucket, reduceBucket bucket.Bucket) *Master {
+func NewMaster(job *jobgraph.Job, port string, mapBucket, interBucket, reduceBucket bucket.Bucket, ck *CheckPoint) *Master {
 	m := &Master{
 		port:          port,
 		workerTaskMap: make(map[int64]TaskDescription),
 		heartbeat:     make(map[int64]chan heartBeatInput),
+		workerNameMap: make(map[int64]string),
 		job:           job,
 		mapBucket:     mapBucket,
 		interBucket:   interBucket,
 		reduceBucket:  reduceBucket,
+		ck:            ck,
 	}
 
 	m.scheduler = Scheduler{

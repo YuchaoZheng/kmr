@@ -249,12 +249,17 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 				state := s.taskStateMap[t]
 				if rep.result != ResultOK {
 					s.taskStateMap[t] = StateIdle
+					err := visitor.TaskFailed(rep.desc)
+					if err != nil {
+						log.Fatal(err)
+					}
 					continue
 				}
 				if state != StateInProgress && state != StateCompleted {
 					log.Errorf("State of task reporting finished is not processing or completed")
 					continue
 				}
+
 				if state == StateInProgress {
 					switch s.phaseMap[t.job] {
 					case mapPhase:
@@ -283,6 +288,10 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 						}
 					default:
 						log.Panic("Phase map is not initialized")
+					}
+					err := visitor.TaskSucceeded(rep.desc)
+					if err != nil {
+						log.Error(err)
 					}
 					s.taskStateMap[t] = StateCompleted
 				}

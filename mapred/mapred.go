@@ -124,3 +124,4 @@ func (tb *CombineCommon) Init() {
 func (tb *CombineCommon) GetTypeConverters() *TypeConverters {
 	return &tb.TypeConverters
 }
+

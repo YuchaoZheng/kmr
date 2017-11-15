@@ -27,7 +27,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-func loadBuckets(m, i, r *config.BucketDescription) ([]bucket.Bucket, error) {
+func loadBuckets(m, i, r, f *config.BucketDescription) ([]bucket.Bucket, error) {
 	mapBucket, err := bucket.NewBucket(m.BucketType, m.Config)
 	if err != nil {
 		return nil, err
@@ -40,19 +40,23 @@ func loadBuckets(m, i, r *config.BucketDescription) ([]bucket.Bucket, error) {
 	if err != nil {
 		return nil, err
 	}
+	flushBucket, err := bucket.NewBucket(f.BucketType, f.Config)
+	if err != nil {
+		return nil, err
+	}
 
 	return []bucket.Bucket{
-		mapBucket, interBucket, reduceBucket,
+		mapBucket, interBucket, reduceBucket, flushBucket,
 	}, nil
 }
 
 func loadBucketsFromRemote(conf *config.RemoteConfig) ([]bucket.Bucket, error) {
-	buckets, err := loadBuckets(conf.MapBucket, conf.InterBucket, conf.ReduceBucket)
+	buckets, err := loadBuckets(conf.MapBucket, conf.InterBucket, conf.ReduceBucket, conf.FlushBucket)
 	return buckets, err
 }
 
 func loadBucketsFromLocal(conf *config.LocalConfig) ([]bucket.Bucket, error) {
-	buckets, err := loadBuckets(conf.MapBucket, conf.InterBucket, conf.ReduceBucket)
+	buckets, err := loadBuckets(conf.MapBucket, conf.InterBucket, conf.ReduceBucket, conf.FlushBucket)
 	return buckets, err
 }
 
@@ -96,6 +100,8 @@ func Run(job *jobgraph.Job) {
 	}
 	app.Before = func(c *cli.Context) error {
 		conf = config.LoadConfigFromMultiFiles(repMap, append(config.GetConfigLoadOrder(), c.StringSlice("config")...)...)
+		b, err := json.MarshalIndent(*conf, "", "\t")
+		log.Info("Config is :", string(b));
 		job.ValidateGraph()
 
 		assetFolder, err = filepath.Abs(c.String("asset-folder"))
@@ -150,7 +156,7 @@ func Run(job *jobgraph.Job) {
 				},
 				cli.IntFlag{
 					Name:  "cpu-limit",
-					Value: 1,
+					Value: 2,
 					Usage: "Define worker cpu limit when run in k8s",
 				},
 				cli.StringFlag{
@@ -162,6 +168,15 @@ func Run(job *jobgraph.Job) {
 					Name:   "service-name",
 					Usage:  "k8s service name used in remote mode",
 					Hidden: true,
+				},
+				cli.StringFlag{
+					Name: "check-point",
+					Usage: "Assign a check point file, which should be in map bucket",
+					Value: "checkpoint",
+				},
+				cli.BoolFlag{
+					Name: "fresh-run",
+					Usage: "delete old check point and rerun",
 				},
 			},
 			Action: func(ctx *cli.Context) error {
@@ -199,7 +214,7 @@ func Run(job *jobgraph.Job) {
 					}
 					workerCtl = worker.NewK8sWorkerCtl(&worker.K8sWorkerConfig{
 						Name:         job.GetName(),
-						CPULimit:     "1",
+						CPULimit:     fmt.Sprint(ctx.Int("cpu-limit")),
 						Namespace:    *conf.Remote.Namespace,
 						K8sConfig:    *k8sconfig,
 						WorkerNum:    ctx.Int("worker-num"),
@@ -228,7 +243,16 @@ func Run(job *jobgraph.Job) {
 					workerCtl.StartWorkers(ctx.Int("worker-num"))
 				}
 
-				m := master.NewMaster(job, strconv.Itoa(ctx.Int("port")), buckets[0], buckets[1], buckets[2])
+				if ctx.Bool("fresh-run") {
+					buckets[2].Delete(ctx.String("check-point"))
+				}
+				ck, err := master.OpenCheckPoint(buckets[2], ctx.String("check-point"))
+				if err != nil {
+					ck = nil
+					log.Error(err)
+				}
+				m := master.NewMaster(job, strconv.Itoa(ctx.Int("port")), buckets[0], buckets[1], buckets[2], ck)
+
 				m.Run()
 
 				if workerCtl != nil {
@@ -262,7 +286,7 @@ func Run(job *jobgraph.Job) {
 				} else {
 					buckets, err = loadBucketsFromRemote(conf.Remote)
 				}
-				w := executor.NewWorker(job, workerID, ctx.String("master-addr"), 64, buckets[0], buckets[1], buckets[2])
+				w := executor.NewWorker(job, workerID, ctx.String("master-addr"), 64, buckets[0], buckets[1], buckets[2], buckets[3])
 				w.Run()
 				return nil
 			},
@@ -282,11 +306,20 @@ func Run(job *jobgraph.Job) {
 				},
 				cli.IntFlag{
 					Name:  "cpu-limit",
-					Value: 1,
+					Value: 2,
 					Usage: "Define worker cpu limit when run in k8s",
 				},
 				cli.StringSliceFlag{
 					Name: "image-tags",
+				},
+				cli.StringFlag{
+					Name: "check-point",
+					Usage: "Assign a check point file, which should be in map bucket",
+					Value: "checkpoint",
+				},
+				cli.BoolFlag{
+					Name: "fresh-run",
+					Usage: "delete old check point and rerun",
 				},
 			},
 			Usage: "Deploy KMR Application in k8s",
@@ -338,18 +371,23 @@ func Run(job *jobgraph.Job) {
 					return err
 				}
 
+				commands := []string{dockerWorkDir + "/internal-used-executable", "--config", dockerWorkDir + "/internal-used-config.json",
+							 "master",
+							 "--remote", "--port", fmt.Sprint(ctx.Int("port")),
+							 "--worker-num", fmt.Sprint(ctx.Int("worker-num")),
+							 "--cpu-limit", fmt.Sprint(ctx.Int("cpu-limit")),
+							 "--image-name", imageName,
+							 "--service-name", job.GetName(),
+							 "--check-point", ctx.String("check-point"),
+				}
+				if ctx.Bool("fresh-run") {
+					commands = append(commands, "--fresh-run")
+				}
 				pod, service, err := util.CreateK8sKMRJob(job.GetName(),
 					*conf.Remote.ServiceAccount,
 					*conf.Remote.Namespace,
 					*conf.Remote.PodDesc, imageName, dockerWorkDir,
-					[]string{dockerWorkDir + "/internal-used-executable", "--config", dockerWorkDir + "/internal-used-config.json",
-						"master",
-						"--remote", "--port", fmt.Sprint(ctx.Int("port")),
-						"--worker-num", fmt.Sprint(ctx.Int("worker-num")),
-						"--cpu-limit", fmt.Sprint(ctx.Int("cpu-limit")),
-						"--image-name", imageName,
-						"--service-name", job.GetName(),
-					},
+					commands,
 					int32(ctx.Int("port")))
 
 				if err != nil {

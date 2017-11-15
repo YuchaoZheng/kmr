@@ -170,6 +170,12 @@
   revision = "5b9ff866471762aa2ab2dced63c9fb6f53921342"
 
 [[projects]]
+  name = "github.com/magiconair/properties"
+  packages = ["assert"]
+  revision = "be5ece7dd465ab0765a9682137865547526d1dfb"
+  version = "v1.7.3"
+
+[[projects]]
   branch = "master"
   name = "github.com/mailru/easyjson"
   packages = ["buffer","jlexer","jwriter"]

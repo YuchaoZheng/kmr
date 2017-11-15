@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"time"
+	"os"
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/jobgraph"
@@ -25,23 +26,28 @@ const (
 )
 
 type Worker struct {
-	job                                  *jobgraph.Job
-	mapBucket, interBucket, reduceBucket bucket.Bucket
-	workerID                             int64
-	flushOutSize                         int
-	masterAddr                           string
+	job                                               *jobgraph.Job
+	mapBucket, interBucket, reduceBucket, flushBucket bucket.Bucket
+	workerID                                          int64
+	flushOutSize                                      int
+	masterAddr                                        string
+	hostName                                          string
 }
 
 // NewWorker create a worker
-func NewWorker(job *jobgraph.Job, workerID int64, masterAddr string, flushOutSize int, mapBucket, interBucket, reduceBucket bucket.Bucket) *Worker {
+func NewWorker(job *jobgraph.Job, workerID int64, masterAddr string, flushOutSize int, mapBucket, interBucket, reduceBucket, flushBucket bucket.Bucket) *Worker {
 	worker := Worker{
 		job:          job,
 		masterAddr:   masterAddr,
 		mapBucket:    mapBucket,
 		interBucket:  interBucket,
 		reduceBucket: reduceBucket,
+		flushBucket:  flushBucket,
 		workerID:     workerID,
 		flushOutSize: flushOutSize,
+	}
+	if hn, err := os.Hostname(); err == nil {
+		worker.hostName = hn
 	}
 	return &worker
 }
@@ -68,18 +74,24 @@ func (w *Worker) Run() {
 	}
 	masterClient := kmrpb.NewMasterClient(cc)
 	for {
+		log.Info(w.hostName, "is requesting task...")
 		task, err := masterClient.RequestTask(context.Background(), &kmrpb.RegisterParams{
-			JobName:  w.job.GetName(),
-			WorkerID: w.workerID,
+			JobName:    w.job.GetName(),
+			WorkerID:   w.workerID,
+			WorkerName: w.hostName,
 		})
+
+
 		if err != nil || task.Retcode != 0 {
 			log.Error(err)
-			// TODO: random backoff
-			time.Sleep(1 * time.Second)
+			time.Sleep(time.Duration(rand.IntnRange(1, 3)) * time.Second)
 			continue
 		}
+
+		log.Info(w.hostName, "get a task", task)
+
 		taskInfo := task.Taskinfo
-		timer := time.NewTicker(master.HeartBeatTimeout / 2)
+		timer := time.NewTicker(master.HeartBeatTimeout / 3)
 		go func() {
 			for range timer.C {
 				// SendHeartBeat
@@ -91,7 +103,7 @@ func (w *Worker) Run() {
 			}
 		}()
 
-		w.executeTask(taskInfo)
+		err = w.executeTask(taskInfo)
 
 		retcode = kmrpb.ReportInfo_FINISH
 		if err != nil {
@@ -126,9 +138,9 @@ func (w *Worker) executeTask(task *kmrpb.TaskInfo) (err error) {
 	cw.BindCombiner(mapredNode.GetCombiner())
 	switch task.Phase {
 	case mapPhase:
-		w.runMapper(cw, mapredNode, task.SubIndex)
+		err = w.runMapper(cw, mapredNode, task.SubIndex)
 	case reducePhase:
-		w.runReducer(cw, mapredNode, task.SubIndex)
+		err = w.runReducer(cw, mapredNode, task.SubIndex)
 	default:
 		x, _ := json.Marshal(task)
 		err = errors.New(fmt.Sprint("Unkown task phase", x))
@@ -136,7 +148,7 @@ func (w *Worker) executeTask(task *kmrpb.TaskInfo) (err error) {
 	return err
 }
 
-func (w *Worker) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, subIndex int32) {
+func (w *Worker) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, subIndex int32) error {
 	readers := make([]records.RecordReader, 0)
 	interFiles := node.GetInterFileNameGenerator().GetReducerInputFiles(int(subIndex))
 	for _, interFile := range interFiles {
@@ -158,10 +170,11 @@ func (w *Worker) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, 
 	if err := cw.DoReduce(readers, recordWriter); err != nil {
 		log.Fatalf("Fail to Reduce: %v", err)
 	}
-	recordWriter.Close()
+	err = recordWriter.Close()
+	return err
 }
 
-func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, subIndex int32) {
+func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, subIndex int32) error {
 	// Inputs Files
 	inputFiles := node.GetInputFiles().GetFiles()
 	readers := make([]records.RecordReader, 0)
@@ -195,13 +208,26 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 		writers = append(writers, recordWriter)
 	}
 
-	cw.DoMap(batchReader, writers, w.interBucket, w.flushOutSize, node.GetIndex(), node.GetReducerNum(), w.workerID)
+	cw.DoMap(batchReader, writers, w.flushBucket, w.flushOutSize, node.GetIndex(), node.GetReducerNum(), w.workerID)
 
+	var err1, err2 error
 	//master should delete intermediate files
 	for _, reader := range readers {
-		reader.Close()
+		err1 = reader.Close()
+		if err1 != nil {
+			log.Error(err1)
+		}
 	}
 	for _, writer := range writers {
-		writer.Close()
+		err2 := writer.Close()
+		if err2 != nil {
+			log.Error(err2)
+		}
 	}
+
+	if err1 != nil || err2 != nil{
+		return errors.New(fmt.Sprint(err1, "\n", err2))
+	}
+
+	return nil
 }

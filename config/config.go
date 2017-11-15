@@ -8,6 +8,8 @@ import (
 	"path"
 	"reflect"
 	"strings"
+
+	"github.com/naturali/kmr/util/log"
 )
 
 func overrideStructV(main reflect.Value, extra reflect.Value) {
@@ -66,7 +68,10 @@ func LoadConfigFromMultiFiles(replacesMap map[string]string, configFiles ...stri
 			for k, v := range replacesMap {
 				b = []byte(strings.Replace(string(b), k, v, -1))
 			}
-			json.Unmarshal(b, newconfig)
+			err1 := json.Unmarshal(b, newconfig)
+			if err1 != nil {
+				log.Fatal(err1)
+			}
 			overrideStruct(config, newconfig)
 		}
 	}

@@ -12,12 +12,12 @@ const (
 	maxWordLength = 20
 )
 
-type wordCountMap struct {
+type characterCountMap struct {
 	mapred.MapperCommon
 	judgeFunc func(ch rune) bool
 }
 
-type wordCountReduce struct {
+type characterCountReduce struct {
 	mapred.ReducerCommon
 }
 
@@ -30,17 +30,17 @@ type reverseReduce struct {
 }
 
 // Map Value is lines from file. Map function split lines into words and emit (word, 1) pairs
-func (w *wordCountMap) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
+func (mapper *characterCountMap) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
 	v, _ := value.(string)
 	for _, c := range []rune(v) {
-		if w.judgeFunc(c) {
+		if mapper.judgeFunc(c) {
 			output(string([]rune{c}), uint32(1))
 		}
 	}
 }
 
 // Reduce key is word and valueNext is an iterator function. Add all values of one key togather to count the word occurs
-func (*wordCountReduce) Reduce(key interface{}, valuesNext mapred.ValueIterator, output func(v interface{}), reporter interface{}) {
+func (*characterCountReduce) Reduce(key interface{}, valuesNext mapred.ValueIterator, output func(v interface{}), reporter interface{}) {
 	var count uint32
 	mapred.ForEachValue(valuesNext, func(value interface{}) {
 		val, _ := value.(uint32)
@@ -49,7 +49,7 @@ func (*wordCountReduce) Reduce(key interface{}, valuesNext mapred.ValueIterator,
 	output(count)
 }
 
-func (w *reverseMapper) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
+func (*reverseMapper) Map(key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
 	output(value, key)
 }
 
@@ -71,7 +71,7 @@ func isChinese(r rune) bool {
 }
 
 func main() {
-	wcmap := &wordCountMap{
+	wcmap := &characterCountMap{
 		MapperCommon: mapred.MapperCommon{
 			TypeConverters: mapred.TypeConverters{
 				InputKeyTypeConverter:    mapred.Bytes{},
@@ -82,7 +82,7 @@ func main() {
 		},
 		judgeFunc: isAlphaOrNumber,
 	}
-	scmap := &wordCountMap{
+	scmap := &characterCountMap{
 		MapperCommon: mapred.MapperCommon{
 			TypeConverters: mapred.TypeConverters{
 				InputKeyTypeConverter:    mapred.Bytes{},
@@ -113,7 +113,7 @@ func main() {
 			},
 		},
 	}
-	wcreduce := &wordCountReduce{
+	wcreduce := &characterCountReduce{
 		ReducerCommon: mapred.ReducerCommon{
 			TypeConverters: mapred.TypeConverters{
 				InputKeyTypeConverter:    mapred.Bytes{},
