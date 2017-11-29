@@ -75,6 +75,33 @@ func Run(job *jobgraph.Job) {
 	var buckets []bucket.Bucket
 	var assetFolder string
 
+	jobCommands := []cli.Flag{
+		cli.IntFlag{
+			Name:  "port",
+			Value: 50051,
+			Usage: "Define how many workers",
+		},
+		cli.IntFlag{
+			Name:  "worker-num",
+			Value: 1,
+			Usage: "Define how many workers",
+		},
+		cli.IntFlag{
+			Name:  "cpu-limit",
+			Value: 2,
+			Usage: "Define worker cpu limit when run in k8s",
+		},
+		cli.StringFlag{
+			Name: "check-point",
+			Usage: "Assign a check point file, which should be in map bucket",
+			Value: "checkpoint",
+		},
+		cli.BoolFlag{
+			Name: "fresh-run",
+			Usage: "delete old check point and rerun",
+		},
+	}
+
 	app := cli.NewApp()
 	app.Name = job.GetName()
 	app.Description = "A KMR application named " + job.GetName()
@@ -100,8 +127,7 @@ func Run(job *jobgraph.Job) {
 	}
 	app.Before = func(c *cli.Context) error {
 		conf = config.LoadConfigFromMultiFiles(repMap, append(config.GetConfigLoadOrder(), c.StringSlice("config")...)...)
-		b, err := json.MarshalIndent(*conf, "", "\t")
-		log.Info("Config is :", string(b));
+		var err error
 		job.ValidateGraph()
 
 		assetFolder, err = filepath.Abs(c.String("asset-folder"))
@@ -134,30 +160,94 @@ func Run(job *jobgraph.Job) {
 
 	app.Commands = []cli.Command{
 		{
+			Name: "internal-print-config",
+			Flags: []cli.Flag {
+				cli.StringFlag{
+					Name: "output",
+					Value: "-",
+				},
+			},
+			Hidden: true,
+			Action: func(ctx *cli.Context) error {
+				var output *os.File
+				outFile := ctx.String("output")
+				if outFile == "-" {
+					output = os.Stdout
+				} else {
+					if output, err = os.Create(outFile); err != nil {
+						return err
+					}
+				}
+				configJson, err := json.MarshalIndent(conf, "", "\t")
+				if err != nil {
+					return err
+				}
+				output.WriteString(string(configJson) + "\n")
+				output.Close()
+				return nil
+			},
+		},
+		{
+			Name: "internal-deploy",
+			Hidden: true,
+			Flags: append([]cli.Flag{
+				cli.StringFlag{
+					Name: "binary",
+					Usage: "kmr job's binary path in docker image",
+				},
+				cli.StringFlag{
+					Name: "config",
+					Usage: "kmr job's config file path in docker image",
+				},
+				cli.StringFlag{
+					Name: "image-name",
+					Usage: "kmr job's docker image name",
+				},
+				cli.StringFlag{
+					Name: "work-dir",
+					Usage: "kmr job's docker work directory",
+				},
+			},
+			jobCommands...),
+			Action: func(ctx *cli.Context) error {
+				imageName := ctx.String("image-name")
+				commands := []string{ctx.String("binary"),
+					"--config", strings.Join([]string(ctx.GlobalStringSlice("config")), ","),
+					"master",
+					"--remote", "--port", fmt.Sprint(ctx.Int("port")),
+					"--worker-num", fmt.Sprint(ctx.Int("worker-num")),
+					"--cpu-limit", fmt.Sprint(ctx.Int("cpu-limit")),
+					"--image-name", imageName,
+					"--service-name", job.GetName(),
+					"--check-point", ctx.String("check-point"),
+				}
+				if ctx.Bool("fresh-run") {
+					commands = append(commands, "--fresh-run")
+				}
+				pod, service, err := util.CreateK8sKMRJob(job.GetName(),
+					*conf.Remote.ServiceAccount,
+					*conf.Remote.Namespace,
+					*conf.Remote.PodDesc, imageName, ctx.String("work-dir"),
+					commands,
+					int32(ctx.Int("port")))
+
+				if err != nil {
+					return cli.NewMultiError(err)
+				}
+				log.Info("Pod: ", pod, "Service: ", service)
+				return nil
+			},
+		},
+		{
 			Name: "master",
-			Flags: []cli.Flag{
+			Flags: append([]cli.Flag{
 				cli.BoolFlag{
 					Name:  "remote",
 					Usage: "Run on kubernetes",
 				},
-				cli.IntFlag{
-					Name:  "port",
-					Value: 50051,
-					Usage: "Define how many workers",
-				},
-				cli.IntFlag{
-					Name:  "worker-num",
-					Value: 1,
-					Usage: "Define how many workers",
-				},
 				cli.BoolFlag{
 					Name:  "listen-only",
 					Usage: "Listen and waiting for workers",
-				},
-				cli.IntFlag{
-					Name:  "cpu-limit",
-					Value: 2,
-					Usage: "Define worker cpu limit when run in k8s",
 				},
 				cli.StringFlag{
 					Name:   "image-name",
@@ -169,16 +259,7 @@ func Run(job *jobgraph.Job) {
 					Usage:  "k8s service name used in remote mode",
 					Hidden: true,
 				},
-				cli.StringFlag{
-					Name: "check-point",
-					Usage: "Assign a check point file, which should be in map bucket",
-					Value: "checkpoint",
-				},
-				cli.BoolFlag{
-					Name: "fresh-run",
-					Usage: "delete old check point and rerun",
-				},
-			},
+			}, jobCommands...),
 			Action: func(ctx *cli.Context) error {
 				var workerCtl worker.WorkerCtl
 				seed := ctx.GlobalInt64("random-seed")
@@ -293,35 +374,11 @@ func Run(job *jobgraph.Job) {
 		},
 		{
 			Name: "deploy",
-			Flags: []cli.Flag{
-				cli.IntFlag{
-					Name:  "port",
-					Value: 50051,
-					Usage: "Define how many workers",
-				},
-				cli.IntFlag{
-					Name:  "worker-num",
-					Value: 1,
-					Usage: "Define how many workers",
-				},
-				cli.IntFlag{
-					Name:  "cpu-limit",
-					Value: 2,
-					Usage: "Define worker cpu limit when run in k8s",
-				},
+			Flags: append([]cli.Flag{
 				cli.StringSliceFlag{
 					Name: "image-tags",
 				},
-				cli.StringFlag{
-					Name: "check-point",
-					Usage: "Assign a check point file, which should be in map bucket",
-					Value: "checkpoint",
-				},
-				cli.BoolFlag{
-					Name: "fresh-run",
-					Usage: "delete old check point and rerun",
-				},
-			},
+			}, jobCommands...),
 			Usage: "Deploy KMR Application in k8s",
 			Action: func(ctx *cli.Context) error {
 				dockerWorkDir := "/kmrapp"
