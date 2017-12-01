@@ -24,3 +24,23 @@
 [[constraint]]
   name = "google.golang.org/grpc"
   version = "1.4.2"
+
+[[constraint]]
+  name = "github.com/ghodss/yaml"
+  version = "1.0.0"
+
+[[override]]
+  name = "k8s.io/apimachinery"
+  # branch = "master"
+  revision = "abe34e4f5b4413c282a83011892cbeea5b32223b"
+
+[[override]]
+  name = "k8s.io/client-go"
+  # branch = "master"
+  revision = "cc44961f935a644fb82c0f4b6591543704578db7"
+
+[[override]]
+  name = "github.com/ugorji/go"
+  revision = "5efa3251c7f7d05e5d9704a69a984ec9f1386a40"
+
+
