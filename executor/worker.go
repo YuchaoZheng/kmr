@@ -105,7 +105,9 @@ func (w *Worker) Run() {
 						WorkerID: w.workerID,
 						Retcode:  kmrpb.ReportInfo_DOING,
 					})
-					log.Error("Failed to send heartbeat message", err)
+					if err != nil {
+						log.Error("Failed to send heartbeat message", err)
+					}
 				case <- timerStopped:
 					lastHeartbeatSent <- true
 					close(lastHeartbeatSent)
