@@ -4,6 +4,7 @@ import (
 	"net"
 	"sync"
 	"time"
+	"errors"
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/jobgraph"
@@ -101,6 +102,21 @@ func (m *Master) JobFinished(job *jobgraph.Job) {
 	m.waitFinish.Done()
 }
 
+func (m *Master) resetWorker(workerID int64) {
+	m.Lock()
+	defer m.Unlock()
+Loop:
+	for {
+		select {
+		case <- m.heartbeat[workerID]:
+			continue
+		default:
+			break Loop
+		}
+	}
+	delete(m.workerTaskMap, workerID)
+}
+
 // CheckHeartbeatForEachWorker
 // CheckHeartbeat keeps checking the heartbeat of each worker. It is either DEAD, PULSE, FINISH or losing signal of
 // heartbeat.
@@ -116,6 +132,8 @@ func (m *Master) CheckHeartbeatForEachWorker(workerID int64, heartbeat chan hear
 			// the worker fuck up, release the task
 			log.Error("Worker: ", workerID, "fuck up")
 			m.scheduler.ReportTask(m.workerTaskMap[workerID], ResultFailed)
+			// when timeout happens, nobody not do it for us
+			m.resetWorker(workerID)
 			return
 		case hb := <-heartbeat:
 			// the worker is doing his job
@@ -168,6 +186,12 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 	var t TaskDescription
 	var err error
 
+	if t, ok := s.master.workerTaskMap[in.WorkerID]; ok {
+		log.Errorf("WorkerID %v is working on %v, waiting for timeout", in.WorkerID, t)
+		// this should never happen
+		return &kmrpb.Task{Retcode: -1}, errors.New("worker is working on another job and have not reported result")
+	}
+
 	for {
 		t, err = s.master.scheduler.RequestTask()
 		if err != nil {
@@ -211,7 +235,11 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 	var t TaskDescription
 	var ok bool
 	if t, ok = s.master.workerTaskMap[in.WorkerID]; !ok {
-		log.Errorf("WorkerID %v is not working on anything", in.WorkerID)
+		log.Errorf("WorkerID %v is not working on anything or has been timeout", in.WorkerID)
+		// this timeout worker is still alive and will not send any heartbeat on this job never
+		if in.Retcode != HeartBeatCodePulse {
+			log.Errorf("WorkerID %v had been timeout but now is alive", in.WorkerID)
+		}
 		return &kmrpb.Response{Retcode: 0}, nil
 	}
 
