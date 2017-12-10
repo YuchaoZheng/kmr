@@ -92,14 +92,27 @@ func (w *Worker) Run() {
 
 		taskInfo := task.Taskinfo
 		timer := time.NewTicker(master.HeartBeatTimeout / 3)
+		// Prevent memory leak. Stop a ticker will not close the channel
+		timerStopped := make(chan bool, 1)
+		lastHeartbeatSent := make(chan bool, 1)
 		go func() {
-			for range timer.C {
-				// SendHeartBeat
-				masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
-					TaskInfo: taskInfo,
-					WorkerID: w.workerID,
-					Retcode:  kmrpb.ReportInfo_DOING,
-				})
+			for {
+				select {
+				case <- timer.C:
+					// SendHeartBeat
+					_, err := masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
+						TaskInfo: taskInfo,
+						WorkerID: w.workerID,
+						Retcode:  kmrpb.ReportInfo_DOING,
+					})
+					if err != nil {
+						log.Error("Failed to send heartbeat message", err)
+					}
+				case <- timerStopped:
+					lastHeartbeatSent <- true
+					close(lastHeartbeatSent)
+					return
+				}
 			}
 		}()
 
@@ -111,14 +124,29 @@ func (w *Worker) Run() {
 			retcode = kmrpb.ReportInfo_ERROR
 		}
 		timer.Stop()
-		masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
-			TaskInfo: taskInfo,
-			WorkerID: w.workerID,
-			Retcode:  retcode,
-		})
-		// backoff
-		if err != nil {
-			time.Sleep(time.Duration(rand.IntnRange(1, 3)) * time.Second)
+		timerStopped <- true
+
+		// synchronize with heartbeat goroutine
+		<- lastHeartbeatSent
+
+		for {
+			log.Info("Reporting job result, code", retcode, "job", taskInfo)
+			ret, err := masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
+				TaskInfo: taskInfo,
+				WorkerID: w.workerID,
+				Retcode:  retcode,
+			})
+			log.Debug("Reporting job master responsd:", err, ret)
+			// backoff
+			if err != nil || ret.Retcode != 0 {
+				// make sure this message received by master
+				// so when we are considered to be timeout by master
+				// we can make master restore us back
+				log.Error("Failed to send task state message", err)
+				time.Sleep(time.Duration(rand.IntnRange(1, 3)) * time.Second)
+			} else {
+				break
+			}
 		}
 	}
 }

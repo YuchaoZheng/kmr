@@ -232,7 +232,7 @@ deployLocal() {
     local assetsFolder=$3
     local args=${@:4}
 
-    local image=${REGISTRY}/${JOBNAME}:latest
+    local image=${REGISTRY}/${JOBNAME}:$(date +%s)
     local bin=/kmr/main
     local config=/kmr/config.json
     local asset=/kmr/assets

@@ -267,6 +267,10 @@ func Run(job *jobgraph.Job) {
 					var err error
 					buckets, err = loadBucketsFromRemote(conf.Remote)
 
+					if err != nil {
+						log.Fatal("error when load remote bucket", err)
+					}
+
 					var k8sconfig *rest.Config
 
 					k8sSchema := os.Getenv("KUBERNETES_API_SCHEMA")
@@ -312,6 +316,10 @@ func Run(job *jobgraph.Job) {
 					})
 				} else {
 					buckets, err = loadBucketsFromLocal(conf.Local)
+					if err != nil {
+						log.Fatal("error when load remote bucket", err)
+					}
+
 					workerCtl = worker.NewLocalWorkerCtl(job, ctx.Int("port"), 64, buckets)
 					os.Chdir(assetFolder)
 				}
