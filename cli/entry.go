@@ -71,9 +71,9 @@ func Run(job *jobgraph.Job) {
 	flag := false
 	for idx, arg := range os.Args {
 		if arg == "--" {
-			log.Info("User arguments are", os.Args[idx + 1:])
+			log.Info("User arguments are", os.Args[idx+1:])
 			if userDefinedArgHandler != nil {
-				userDefinedArgHandler(os.Args[idx + 1:])
+				userDefinedArgHandler(os.Args[idx+1:])
 			} else {
 				log.Info("No user handler to handle arguments.")
 			}

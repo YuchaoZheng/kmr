@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/naturali/kmr/util/log"
-	"github.com/reusee/mmh3"
 )
 
 type Files interface {
@@ -29,9 +28,10 @@ func (i *InterFileNameGenerator) GetFile(mapperIdx, reducerIdx int) string {
 	if !(mapperIdx >= 0 && mapperIdx < nMappers) {
 		log.Fatal("SubIdx is error", mapperIdx, "when get mapper output files for job", i.mrNode.jobNode.name)
 	}
-	bucketNum1 := mmh3.Hash32([]byte(fmt.Sprint(mapperIdx, nReducer, reducerIdx, nReducer))) % 9000
-	bucketNum2 := mmh3.Hash32([]byte(fmt.Sprint(mapperIdx * nReducer + reducerIdx))) % 9000
-	return fmt.Sprintf("inter-%v/inter-%v/inter-%v-%v-%v", bucketNum1, bucketNum2, i.mrNode.jobNode.name, i.mrNode.index, mapperIdx*nReducer+reducerIdx)
+	jobName := fmt.Sprintf("inter-job-%v", i.mrNode.jobNode.name)
+	mapIndex := fmt.Sprintf("inter-map-%v", i.mrNode.index)
+	filename := fmt.Sprintf("inter-%v-%v-%v", i.mrNode.jobNode.name, i.mrNode.index, mapperIdx*nReducer+reducerIdx)
+	return fmt.Sprintf("%s/%s/%s", jobName, mapIndex, filename)
 }
 
 func (i *InterFileNameGenerator) GetMapperOutputFiles(mapperIdx int) []string {

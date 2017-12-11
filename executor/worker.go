@@ -90,7 +90,7 @@ func (w *Worker) Run() {
 		log.Info(w.hostName, "get a task", task)
 
 		taskInfo := task.Taskinfo
-		timer := time.NewTicker(master.HeartBeatTimeout / 3)
+		timer := time.NewTicker(master.HeartBeatTimeout / 9)
 		// Prevent memory leak. Stop a ticker will not close the channel
 		timerStopped := make(chan bool, 1)
 		lastHeartbeatSent := make(chan bool, 1)
