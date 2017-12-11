@@ -56,19 +56,16 @@ func ReadRecord(reader io.Reader) (*Record, error) {
 func WriteRecord(writer io.Writer, record *Record) (err error) {
 	err = binary.Write(writer, binary.BigEndian, int32(len(record.Key)))
 	if err != nil {
-		return
+		return err
 	}
 	_, err = writer.Write(record.Key)
 	if err != nil {
-		return
+		return err
 	}
 	err = binary.Write(writer, binary.BigEndian, int32(len(record.Value)))
 	if err != nil {
-		return
+		return err
 	}
 	_, err = writer.Write(record.Value)
-	if err != nil {
-		return
-	}
-	return nil
+	return err
 }

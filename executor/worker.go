@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 	"os"
+	"time"
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/jobgraph"
@@ -81,7 +81,6 @@ func (w *Worker) Run() {
 			WorkerName: w.hostName,
 		})
 
-
 		if err != nil || task.Retcode != 0 {
 			log.Error(err)
 			time.Sleep(time.Duration(rand.IntnRange(1, 3)) * time.Second)
@@ -98,7 +97,7 @@ func (w *Worker) Run() {
 		go func() {
 			for {
 				select {
-				case <- timer.C:
+				case <-timer.C:
 					// SendHeartBeat
 					_, err := masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
 						TaskInfo: taskInfo,
@@ -108,7 +107,7 @@ func (w *Worker) Run() {
 					if err != nil {
 						log.Error("Failed to send heartbeat message", err)
 					}
-				case <- timerStopped:
+				case <-timerStopped:
 					lastHeartbeatSent <- true
 					close(lastHeartbeatSent)
 					return
@@ -127,7 +126,7 @@ func (w *Worker) Run() {
 		timerStopped <- true
 
 		// synchronize with heartbeat goroutine
-		<- lastHeartbeatSent
+		<-lastHeartbeatSent
 
 		for {
 			log.Info("Reporting job result, code", retcode, "job", taskInfo)
@@ -249,11 +248,11 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 	for _, writer := range writers {
 		err2 := writer.Close()
 		if err2 != nil {
-			log.Error(err2)
+			log.Fatal(err2)
 		}
 	}
 
-	if err1 != nil || err2 != nil{
+	if err1 != nil || err2 != nil {
 		return errors.New(fmt.Sprint(err1, "\n", err2))
 	}
 

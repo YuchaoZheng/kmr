@@ -1,10 +1,10 @@
 package master
 
 import (
+	"errors"
 	"net"
 	"sync"
 	"time"
-	"errors"
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/jobgraph"
@@ -108,7 +108,7 @@ func (m *Master) resetWorker(workerID int64) {
 Loop:
 	for {
 		select {
-		case <- m.heartbeat[workerID]:
+		case <-m.heartbeat[workerID]:
 			continue
 		default:
 			break Loop

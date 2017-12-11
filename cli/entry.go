@@ -92,12 +92,12 @@ func Run(job *jobgraph.Job) {
 			Usage: "Define worker cpu limit when run in k8s",
 		},
 		cli.StringFlag{
-			Name: "check-point",
+			Name:  "check-point",
 			Usage: "Assign a check point file, which should be in map bucket",
 			Value: "checkpoint",
 		},
 		cli.BoolFlag{
-			Name: "fresh-run",
+			Name:  "fresh-run",
 			Usage: "delete old check point and rerun",
 		},
 	}
@@ -161,9 +161,9 @@ func Run(job *jobgraph.Job) {
 	app.Commands = []cli.Command{
 		{
 			Name: "internal-print-config",
-			Flags: []cli.Flag {
+			Flags: []cli.Flag{
 				cli.StringFlag{
-					Name: "output",
+					Name:  "output",
 					Value: "-",
 				},
 			},
@@ -188,27 +188,27 @@ func Run(job *jobgraph.Job) {
 			},
 		},
 		{
-			Name: "internal-deploy",
+			Name:   "internal-deploy",
 			Hidden: true,
 			Flags: append([]cli.Flag{
 				cli.StringFlag{
-					Name: "binary",
+					Name:  "binary",
 					Usage: "kmr job's binary path in docker image",
 				},
 				cli.StringFlag{
-					Name: "config",
+					Name:  "config",
 					Usage: "kmr job's config file path in docker image",
 				},
 				cli.StringFlag{
-					Name: "image-name",
+					Name:  "image-name",
 					Usage: "kmr job's docker image name",
 				},
 				cli.StringFlag{
-					Name: "work-dir",
+					Name:  "work-dir",
 					Usage: "kmr job's docker work directory",
 				},
 			},
-			jobCommands...),
+				jobCommands...),
 			Action: func(ctx *cli.Context) error {
 				imageName := ctx.String("image-name")
 				commands := []string{ctx.String("binary"),
@@ -437,13 +437,13 @@ func Run(job *jobgraph.Job) {
 				}
 
 				commands := []string{dockerWorkDir + "/internal-used-executable", "--config", dockerWorkDir + "/internal-used-config.json",
-							 "master",
-							 "--remote", "--port", fmt.Sprint(ctx.Int("port")),
-							 "--worker-num", fmt.Sprint(ctx.Int("worker-num")),
-							 "--cpu-limit", fmt.Sprint(ctx.Int("cpu-limit")),
-							 "--image-name", imageName,
-							 "--service-name", job.GetName(),
-							 "--check-point", ctx.String("check-point"),
+					"master",
+					"--remote", "--port", fmt.Sprint(ctx.Int("port")),
+					"--worker-num", fmt.Sprint(ctx.Int("worker-num")),
+					"--cpu-limit", fmt.Sprint(ctx.Int("cpu-limit")),
+					"--image-name", imageName,
+					"--service-name", job.GetName(),
+					"--check-point", ctx.String("check-point"),
 				}
 				if ctx.Bool("fresh-run") {
 					commands = append(commands, "--fresh-run")

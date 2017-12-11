@@ -177,7 +177,9 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 		if cw.combiner == nil || !bytes.Equal(curRecord.Key, r.Key) {
 			if curRecord.Key != nil {
 				rBucketID := util.HashBytesKey(curRecord.Key) % nReduce
-				writers[rBucketID].WriteRecord(curRecord)
+				if err := writers[rBucketID].WriteRecord(curRecord); err != nil {
+					log.Fatalf("Failed to write record: %v", err)
+				}
 			}
 			curRecord = r
 		} else {
@@ -188,7 +190,9 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 	}
 	if curRecord != nil && curRecord.Key != nil {
 		rBucketID := util.HashBytesKey(curRecord.Key) % nReduce
-		writers[rBucketID].WriteRecord(curRecord)
+		if err := writers[rBucketID].WriteRecord(curRecord); err != nil {
+			log.Fatalf("Failed to write record to writer: %v", err)
+		}
 	}
 
 	for _, reader := range readers {
