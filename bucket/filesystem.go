@@ -57,6 +57,8 @@ func NewFSBucket(directory string) (bk Bucket, err error) {
 // OpenRead Open a RecordReader by name
 func (fsb FSBucket) OpenRead(key string) (rd ObjectReader, err error) {
 	path := filepath.Join(fsb.directory, key)
+	dir := filepath.Dir(path)
+	os.MkdirAll(dir, 0755)
 	file, err := os.OpenFile(path, os.O_RDONLY, 0666)
 	if err != nil {
 		log.Printf("Fail to open %v for read(abspath: \"%v\"): %v", key, path, err)
@@ -68,6 +70,8 @@ func (fsb FSBucket) OpenRead(key string) (rd ObjectReader, err error) {
 func (fsb FSBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 	var writer FSObjectWriter
 	path := filepath.Join(fsb.directory, key)
+	dir := filepath.Dir(path)
+	os.MkdirAll(dir, 0755)
 	writer.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Printf("Fail to open %v for write (abspath: \"%v\"): %v", key, path, err)
