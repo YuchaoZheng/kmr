@@ -106,3 +106,8 @@ func (bk *AliBlobBucket) ListFiles() ([]string, error) {
 	}
 	return res, nil
 }
+
+func (bk *AliBlobBucket) CreateDir(files []string) error {
+	// Ali do not need to create dir
+	return nil
+}

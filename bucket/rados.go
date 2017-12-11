@@ -3,6 +3,7 @@
 package bucket
 
 import (
+	"errors"
 	"io"
 	"log"
 
@@ -111,4 +112,8 @@ func (bk *RadosBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 // Delete Delete object in bucket
 func (bk *RadosBucket) Delete(key string) error {
 	return bk.ioctx.Delete(bk.prefix + key)
+}
+
+func (bk *RadosBucket) CreateDir(files []string) error {
+	return errors.New("not support CreateDir on RadosBucket")
 }

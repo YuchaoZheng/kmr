@@ -126,3 +126,8 @@ func (bk *AzureBlobBucket) Delete(key string) error {
 func (bk *AzureBlobBucket) ListFiles() ([]string, error) {
 	return nil, errors.New("azure list file is not implemented")
 }
+
+func (bk *AzureBlobBucket) CreateDir(files []string) error {
+	// It do not need to create dir
+	return nil
+}
