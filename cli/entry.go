@@ -65,6 +65,14 @@ var userDefinedArgHandler func([]string)
 func BindArgumentHandler(handler func([]string)) {
 	userDefinedArgHandler = handler
 }
+// If we are in a docker container or in local
+func IsInContainer() {
+    if f, err := os.Stat("/.dockerenv"); os.IsNotExist(err) {
+        return false;
+    } else {
+        return true;
+    }
+}
 
 func Run(job *jobgraph.Job) {
 	log.Debug("Call user defined argument handler")
