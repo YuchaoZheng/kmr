@@ -90,7 +90,7 @@ func (w *Worker) Run() {
 		log.Info(w.hostName, "get a task", task)
 
 		taskInfo := task.Taskinfo
-		timer := time.NewTicker(master.HeartBeatTimeout / 3)
+		timer := time.NewTicker(master.HeartBeatTimeout / 9)
 		// Prevent memory leak. Stop a ticker will not close the channel
 		timerStopped := make(chan bool, 1)
 		lastHeartbeatSent := make(chan bool, 1)
@@ -224,6 +224,9 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 		log.Fatal("mapper output files count doesn't equal to reducer count")
 	}
 
+	if err := w.interBucket.CreateDir(interFiles); err != nil {
+		log.Fatalf("cannot create dir err: %v", err)
+	}
 	writers := make([]records.RecordWriter, 0)
 	for i := 0; i < node.GetReducerNum(); i++ {
 		intermediateFileName := interFiles[i]

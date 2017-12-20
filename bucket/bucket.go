@@ -23,6 +23,7 @@ type Bucket interface {
 	OpenWrite(key string) (ObjectWriter, error)
 	Delete(key string) error
 	ListFiles() ([]string, error)
+	CreateDir(files []string) error
 }
 
 // NewBucket Bucket factory

@@ -28,7 +28,10 @@ func (i *InterFileNameGenerator) GetFile(mapperIdx, reducerIdx int) string {
 	if !(mapperIdx >= 0 && mapperIdx < nMappers) {
 		log.Fatal("SubIdx is error", mapperIdx, "when get mapper output files for job", i.mrNode.jobNode.name)
 	}
-	return fmt.Sprintf("inter-%v-%v-%v", i.mrNode.jobNode.name, i.mrNode.index, mapperIdx*nReducer+reducerIdx)
+	jobName := fmt.Sprintf("inter-job-%v", i.mrNode.jobNode.name)
+	mapIndex := fmt.Sprintf("inter-map-%v-%v", i.mrNode.index, mapperIdx)
+	filename := fmt.Sprintf("inter-%v-%v-%v", i.mrNode.jobNode.name, i.mrNode.index, mapperIdx*nReducer+reducerIdx)
+	return fmt.Sprintf("%s/%s/%s", jobName, mapIndex, filename)
 }
 
 func (i *InterFileNameGenerator) GetMapperOutputFiles(mapperIdx int) []string {

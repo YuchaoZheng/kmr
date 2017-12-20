@@ -75,6 +75,22 @@ func (fsb FSBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 	return &writer, nil
 }
 
+func (fsb FSBucket) CreateDir(files []string) error {
+	dirs := map[string]bool{}
+	for _, filename := range files {
+		path := filepath.Join(fsb.directory, filename)
+		dirs[filepath.Dir(path)] = true
+	}
+	var err error
+	for dir := range dirs {
+		err = os.MkdirAll(dir, 0755)
+		if err != nil {
+			break
+		}
+	}
+	return err
+}
+
 // Delete Delete object in bucket
 func (fsb FSBucket) Delete(key string) error {
 	return os.Remove(filepath.Join(fsb.directory, key))

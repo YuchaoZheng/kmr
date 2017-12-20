@@ -21,7 +21,7 @@ const (
 	HeartBeatCodeDead
 	HeartBeatCodeFinished
 
-	HeartBeatTimeout = 20 * time.Second
+	HeartBeatTimeout = 90 * time.Second
 )
 
 type heartBeatInput struct {

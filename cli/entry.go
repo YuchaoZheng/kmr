@@ -60,7 +60,36 @@ func loadBucketsFromLocal(conf *config.LocalConfig) ([]bucket.Bucket, error) {
 	return buckets, err
 }
 
+var userDefinedArgHandler func([]string)
+
+func BindArgumentHandler(handler func([]string)) {
+	userDefinedArgHandler = handler
+}
+
 func Run(job *jobgraph.Job) {
+	log.Debug("Call user defined argument handler")
+	flag := false
+	for idx, arg := range os.Args {
+		if arg == "--" {
+			log.Info("User arguments are", os.Args[idx+1:])
+			if userDefinedArgHandler != nil {
+				userDefinedArgHandler(os.Args[idx+1:])
+			} else {
+				log.Info("No user handler to handle arguments.")
+			}
+			flag = true
+			os.Args = os.Args[:idx]
+			break
+		}
+	}
+
+	if !flag {
+		log.Info("No user arguments found.")
+		if userDefinedArgHandler != nil {
+			userDefinedArgHandler([]string{})
+		}
+	}
+
 	if len(job.GetName()) == 0 {
 		job.SetName("anonymous-kmr-job")
 	}

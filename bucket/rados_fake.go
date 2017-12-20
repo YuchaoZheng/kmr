@@ -76,3 +76,7 @@ func (bk *RadosBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 func (bk *RadosBucket) Delete(key string) error {
 	return errNotImplemented
 }
+
+func (bk *RadosBucket) CreateDir(files []string) error {
+	return errNotImplemented
+}
