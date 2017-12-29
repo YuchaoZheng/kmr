@@ -18,21 +18,28 @@ import (
 	"github.com/naturali/kmr/util/log"
 )
 
+type TaskState struct {
+	succeeded   bool
+	failureTime int
+}
+
 type CheckPoint struct {
 	mutex sync.Mutex
-	ckMap map[string]bool
+	ckMap map[string]TaskState
 	key   string
 	bk    bucket.Bucket
 }
 
-func (c *CheckPoint) AddCompletedJob(description TaskDescription) (err error) {
+func (desc TaskDescription) mapKey() string {
+	desc.ID = 0
+	return fmt.Sprint(desc)
+}
+
+func (c *CheckPoint) SetTaskState(desc TaskDescription, state TaskState) {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 
-	// don't care the ID
-	description.ID = 0
-
-	c.ckMap[fmt.Sprint(description)] = true
+	c.ckMap[desc.mapKey()] = state
 
 	writer, err := c.bk.OpenWrite(c.key)
 	defer writer.Close()
@@ -51,21 +58,37 @@ func (c *CheckPoint) AddCompletedJob(description TaskDescription) (err error) {
 	return
 }
 
-func (c *CheckPoint) IsJobCompleted(description TaskDescription) (ok bool) {
+func (c *CheckPoint) GetTaskState(desc TaskDescription) TaskState {
 	c.mutex.Lock()
 	defer c.mutex.Unlock()
 	// don't care the ID
-	description.ID = 0
+	desc.ID = 0
 
-	_, ok = c.ckMap[fmt.Sprint(description)]
-	return
+	s, ok := c.ckMap[fmt.Sprint(desc)]
+	if ok {
+		return s
+	} else {
+		return TaskState{false, 0}
+	}
+}
+
+func (c *CheckPoint) IncreaseTaskFailureTime(desc TaskDescription) {
+	s := c.GetTaskState(desc)
+	s.failureTime++
+	c.SetTaskState(desc, s)
+}
+
+func (c *CheckPoint) MarkTaskSucceeded(desc TaskDescription) {
+	s := c.GetTaskState(desc)
+	s.succeeded = true
+	c.SetTaskState(desc, s)
 }
 
 func OpenCheckPoint(bk bucket.Bucket, key string) (cp *CheckPoint, err error) {
 	cp = &CheckPoint{
 		bk:    bk,
 		key:   key,
-		ckMap: make(map[string]bool),
+		ckMap: make(map[string]TaskState),
 	}
 
 	reader, err := bk.OpenRead(key)
@@ -75,7 +98,7 @@ func OpenCheckPoint(bk bucket.Bucket, key string) (cp *CheckPoint, err error) {
 			return
 		}
 
-		tmpMap := make(map[string]bool)
+		tmpMap := make(map[string]TaskState)
 		err = json.Unmarshal(byteContent, &tmpMap)
 		if err == nil {
 			cp.ckMap = tmpMap

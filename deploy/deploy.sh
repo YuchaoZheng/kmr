@@ -294,6 +294,9 @@ Flags:
         Check porint file
     --fresh-run
         Fresh run, ignore checkpoint.
+    --max-retries
+        If a task fails more than MAX-RETRIES, it\'ll be regarded as succeeded. <=0 mean unlimited,
+        Default: 0
     --v
         output verbose
     --vv
@@ -331,7 +334,7 @@ main() {
             configFile=$2
             shift;shift
             ;;
-            --port|--worker-num|--cpu-limit)
+            --port|--worker-num|--cpu-limit|--max-retries)
             # simple check, not enough
             [[ $2 =~ ^[0-9]+$ ]] && args+=($1 $2) || { help && error 'NUM arg required for ' $1; }
             shift;shift

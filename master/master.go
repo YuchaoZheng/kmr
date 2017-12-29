@@ -44,17 +44,22 @@ type Master struct {
 	mapBucket, interBucket, reduceBucket bucket.Bucket
 	waitFinish                           sync.WaitGroup
 
+	MaxFailureTime int
+
 	ck *CheckPoint
 }
 
 func (m *Master) TaskSucceeded(t TaskDescription) error {
 	if m.ck != nil {
-		m.ck.AddCompletedJob(t)
+		m.ck.MarkTaskSucceeded(t)
 	}
 	return nil
 }
 
 func (m *Master) TaskFailed(t TaskDescription) error {
+	if m.ck != nil {
+		m.ck.IncreaseTaskFailureTime(t)
+	}
 	return nil
 }
 
@@ -199,11 +204,22 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 				Retcode: -1,
 			}, err
 		}
-		if s.master.ck != nil && s.master.ck.IsJobCompleted(t) {
-			log.Info("Job", t, "had been finished according to checkpoint")
-			go func(taskDesc TaskDescription) {
-				s.master.scheduler.ReportTask(taskDesc, ResultOK)
-			}(t)
+
+		if s.master.ck != nil {
+			state := s.master.ck.GetTaskState(t)
+			if state.succeeded || (s.master.MaxFailureTime > 0 && state.failureTime > s.master.MaxFailureTime) {
+				if state.succeeded {
+					log.Info("Job", t, "had been finished according to checkpoint")
+				} else {
+					log.Info("Job", t, "is finished because it has failed for more than",
+						s.master.MaxFailureTime, "times")
+				}
+				go func(taskDesc TaskDescription) {
+					s.master.scheduler.ReportTask(taskDesc, ResultOK)
+				}(t)
+			} else {
+				break
+			}
 		} else {
 			break
 		}
