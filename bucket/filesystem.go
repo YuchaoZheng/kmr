@@ -60,6 +60,7 @@ func (fsb FSBucket) OpenRead(key string) (rd ObjectReader, err error) {
 	file, err := os.OpenFile(path, os.O_RDONLY, 0666)
 	if err != nil {
 		log.Printf("Fail to open %v for read(abspath: \"%v\"): %v", key, path, err)
+		return
 	}
 	return &FSObjectReader{file: file}, nil
 }
@@ -71,6 +72,7 @@ func (fsb FSBucket) OpenWrite(key string) (wr ObjectWriter, err error) {
 	writer.file, err = os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		log.Printf("Fail to open %v for write (abspath: \"%v\"): %v", key, path, err)
+		return
 	}
 	return &writer, nil
 }
