@@ -183,9 +183,10 @@ func (w *Worker) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, 
 		reader, err := w.interBucket.OpenRead(interFile)
 		recordReader := records.NewStreamRecordReader(reader)
 		if err != nil {
-			log.Fatalf("Failed to open intermediate: %v", err)
+			log.Errorf("Failed to open intermediate: %v", err)
+		} else {
+			readers = append(readers, recordReader)
 		}
-		readers = append(readers, recordReader)
 	}
 
 	outputFile := node.GetOutputFiles().GetFiles()[subIndex]
