@@ -132,7 +132,6 @@ func main() {
 	input := &jobgraph.InputFiles{
 		Files: []string{
 			"/etc/passwd",
-			"/etc/passwd2",
 		},
 		Type: "textstream",
 	}

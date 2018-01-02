@@ -65,6 +65,7 @@ var userDefinedArgHandler func([]string)
 func BindArgumentHandler(handler func([]string)) {
 	userDefinedArgHandler = handler
 }
+
 // If we are in a docker container or in local
 func IsInContainer() bool {
     if _, err := os.Stat("/.dockerenv"); os.IsNotExist(err) {
@@ -382,8 +383,8 @@ func Run(job *jobgraph.Job) {
 					ck = nil
 					log.Error(err)
 				}
-				m := master.NewMaster(job, strconv.Itoa(ctx.Int("port")), buckets[0], buckets[1], buckets[2], ck)
-				m.MaxFailureTime = ctx.Int("max-retries")
+
+				m := master.NewMaster(job, strconv.Itoa(ctx.Int("port")), buckets[0], buckets[1], buckets[2], ck, ctx.Int("max-retries"))
 
 				m.Run()
 

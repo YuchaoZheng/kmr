@@ -2,7 +2,7 @@
   "mapBucket": {
     "bucketType": "filesystem",
     "config": {
-      "directory": "/tmp"
+      "directory": "/"
     }
   },
   "interBucket": {
