@@ -66,6 +66,15 @@ func BindArgumentHandler(handler func([]string)) {
 	userDefinedArgHandler = handler
 }
 
+// If we are in a docker container or in local
+func IsInContainer() bool {
+    if _, err := os.Stat("/.dockerenv"); os.IsNotExist(err) {
+        return false;
+    } else {
+        return true;
+    }
+}
+
 func Run(job *jobgraph.Job) {
 	log.Debug("Call user defined argument handler")
 	flag := false
@@ -128,6 +137,11 @@ func Run(job *jobgraph.Job) {
 		cli.BoolFlag{
 			Name:  "fresh-run",
 			Usage: "delete old check point and rerun",
+		},
+		cli.IntFlag{
+			Name: "max-retries",
+			Value: 0,
+			Usage: "If a task fails more than MAX-RETRIES, it'll be regarded as succeeded. <=0 mean unlimited",
 		},
 	}
 
@@ -369,7 +383,8 @@ func Run(job *jobgraph.Job) {
 					ck = nil
 					log.Error(err)
 				}
-				m := master.NewMaster(job, strconv.Itoa(ctx.Int("port")), buckets[0], buckets[1], buckets[2], ck)
+
+				m := master.NewMaster(job, strconv.Itoa(ctx.Int("port")), buckets[0], buckets[1], buckets[2], ck, ctx.Int("max-retries"))
 
 				m.Run()
 
@@ -473,6 +488,7 @@ func Run(job *jobgraph.Job) {
 					"--image-name", imageName,
 					"--service-name", job.GetName(),
 					"--check-point", ctx.String("check-point"),
+					"--max-retries", fmt.Sprint(ctx.Int("max-retries")),
 				}
 				if ctx.Bool("fresh-run") {
 					commands = append(commands, "--fresh-run")

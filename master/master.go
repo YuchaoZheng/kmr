@@ -44,17 +44,24 @@ type Master struct {
 	mapBucket, interBucket, reduceBucket bucket.Bucket
 	waitFinish                           sync.WaitGroup
 
+	maxFailureTime int
+
 	ck *CheckPoint
 }
 
 func (m *Master) TaskSucceeded(t TaskDescription) error {
 	if m.ck != nil {
-		m.ck.AddCompletedJob(t)
+		m.ck.MarkTaskSucceeded(t)
 	}
 	return nil
 }
 
 func (m *Master) TaskFailed(t TaskDescription) error {
+	if m.ck != nil {
+		state := m.ck.GetTaskState(t)
+		log.Info("Task", t,"has failed for", state.failureTime, "times", "limit: ", m.maxFailureTime)
+		m.ck.IncreaseTaskFailureTime(t)
+	}
 	return nil
 }
 
@@ -199,11 +206,22 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 				Retcode: -1,
 			}, err
 		}
-		if s.master.ck != nil && s.master.ck.IsJobCompleted(t) {
-			log.Info("Job", t, "had been finished according to checkpoint")
-			go func(taskDesc TaskDescription) {
-				s.master.scheduler.ReportTask(taskDesc, ResultOK)
-			}(t)
+
+		if s.master.ck != nil {
+			state := s.master.ck.GetTaskState(t)
+			if state.succeeded || (s.master.maxFailureTime > 0 && state.failureTime > s.master.maxFailureTime) {
+				if state.succeeded {
+					log.Info("Job", t, "had been finished according to checkpoint")
+				} else {
+					log.Info("Job", t, "is finished because it has failed for more than",
+						s.master.maxFailureTime, "times")
+				}
+				go func(taskDesc TaskDescription) {
+					s.master.scheduler.ReportTask(taskDesc, ResultOK)
+				}(t)
+			} else {
+				break
+			}
 		} else {
 			break
 		}
@@ -264,17 +282,18 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 }
 
 // NewMaster Create a master, waiting for workers
-func NewMaster(job *jobgraph.Job, port string, mapBucket, interBucket, reduceBucket bucket.Bucket, ck *CheckPoint) *Master {
+func NewMaster(job *jobgraph.Job, port string, mapBucket, interBucket, reduceBucket bucket.Bucket, ck *CheckPoint, maxFailure int) *Master {
 	m := &Master{
-		port:          port,
-		workerTaskMap: make(map[int64]TaskDescription),
-		heartbeat:     make(map[int64]chan heartBeatInput),
-		workerNameMap: make(map[int64]string),
-		job:           job,
-		mapBucket:     mapBucket,
-		interBucket:   interBucket,
-		reduceBucket:  reduceBucket,
-		ck:            ck,
+		port:           port,
+		workerTaskMap:  make(map[int64]TaskDescription),
+		heartbeat:      make(map[int64]chan heartBeatInput),
+		workerNameMap:  make(map[int64]string),
+		job:            job,
+		mapBucket:      mapBucket,
+		interBucket:    interBucket,
+		reduceBucket:   reduceBucket,
+		ck:             ck,
+		maxFailureTime: maxFailure,
 	}
 
 	m.scheduler = Scheduler{

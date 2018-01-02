@@ -68,10 +68,18 @@ func (w *Worker) Run() {
 	//Here we must know the master address
 	var retcode kmrpb.ReportInfo_ErrorCode
 
-	cc, err := grpc.Dial(w.masterAddr, grpc.WithInsecure())
-	if err != nil {
-		log.Fatal("cannot connect to master", err)
+	var cc *grpc.ClientConn
+	for {
+		var err error
+		cc, err = grpc.Dial(w.masterAddr, grpc.WithInsecure())
+		if err != nil {
+			log.Error("cannot connect to master", err)
+			time.Sleep(time.Duration(20 * time.Second))
+		} else {
+			break
+		}
 	}
+
 	masterClient := kmrpb.NewMasterClient(cc)
 	for {
 		log.Info(w.hostName, "is requesting task...")
@@ -183,19 +191,22 @@ func (w *Worker) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, 
 		reader, err := w.interBucket.OpenRead(interFile)
 		recordReader := records.NewStreamRecordReader(reader)
 		if err != nil {
-			log.Fatalf("Failed to open intermediate: %v", err)
+			log.Errorf("Failed to open intermediate: %v", err)
+		} else {
+			readers = append(readers, recordReader)
 		}
-		readers = append(readers, recordReader)
 	}
 
 	outputFile := node.GetOutputFiles().GetFiles()[subIndex]
 	writer, err := w.getBucket(node.GetOutputFiles()).OpenWrite(outputFile)
 	if err != nil {
-		log.Fatalf("Failed to open intermediate: %v", err)
+		log.Errorf("Failed to open reduce output file: %v", err)
+		return err
 	}
 	recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 	if err := cw.DoReduce(readers, recordWriter); err != nil {
-		log.Fatalf("Fail to Reduce: %v", err)
+		log.Errorf("Fail to Reduce: %v", err)
+		return err
 	}
 	err = recordWriter.Close()
 	return err
@@ -210,7 +221,8 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 		log.Debug("Opening mapper input file", file)
 		reader, err := w.getBucket(node.GetInputFiles()).OpenRead(file)
 		if err != nil {
-			log.Fatalf("Fail to open object %s: %v", file, err)
+			log.Errorf("Fail to open object %s: %v", file, err)
+			return err
 		}
 		recordReader := records.MakeRecordReader(node.GetInputFiles().GetType(), map[string]interface{}{"reader": reader})
 		readers = append(readers, recordReader)
@@ -225,7 +237,8 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 	}
 
 	if err := w.interBucket.CreateDir(interFiles); err != nil {
-		log.Fatalf("cannot create dir err: %v", err)
+		log.Errorf("cannot create dir err: %v", err)
+		return err
 	}
 	writers := make([]records.RecordWriter, 0)
 	for i := 0; i < node.GetReducerNum(); i++ {
@@ -233,7 +246,8 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 		writer, err := w.interBucket.OpenWrite(intermediateFileName)
 		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 		if err != nil {
-			log.Fatalf("Failed to open intermediate: %v", err)
+			log.Errorf("Failed to open intermediate: %v", err)
+			return err
 		}
 		writers = append(writers, recordWriter)
 	}
@@ -251,7 +265,7 @@ func (w *Worker) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, s
 	for _, writer := range writers {
 		err2 := writer.Close()
 		if err2 != nil {
-			log.Fatal(err2)
+			log.Error(err2)
 		}
 	}
 
