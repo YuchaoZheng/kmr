@@ -26,6 +26,7 @@ IFS='' read -r -d '' KMR_BASE_IMAGE_DOCKERFILE <<'EOF'
 FROM golang:1.8.5
 RUN apt-get -y update
 RUN apt-get -y install librados-dev
+ENV LD_LIBRARY_PATH=/lib:/usr/lib:/usr/local/lib
 EOF
 
 LOG_LEVEL=2
@@ -177,6 +178,13 @@ buildJobImage() {
     execute mkdir -p \$\(dirname $outputBinaryFile\)
     execute mkdir -p \$\(dirname $outputConfigFile\)
     [ ! -z $outputAssetsFolder ] && execute mkdir -p \$\(dirname $outputAssetsFolder\)
+
+    if [[ ! -z $assetsFolder &&  -d $assetsFolder ]];then
+        execute echo "Copying assets folder"
+        execute cp -r $assetsAbsPathInContainer $outputAssetsFolder '|| exit 127'
+        execute echo "Copying assets folder done"
+    fi
+
     execute echo "Building source file" $binAbsPathInContainer
     execute \(cd \$\(dirname $binAbsPathInContainer\)\; go build -i -o $outputBinaryFile $binAbsPathInContainer\) '|| exit 127'
     execute echo "Gen config file" $outputConfigFile
@@ -187,11 +195,7 @@ buildJobImage() {
     execute echo "Config file content is"
     execute ls -lh $outputConfigFile
     execute cat $outputConfigFile
-    if [[ ! -z $assetsFolder &&  -d $assetFolder ]];then
-        execute echo "Copying assets folder"
-        execute cp -r $assetsAbsPathInContainer $outputAssetsFolder '|| exit 127'
-        execute echo "Copying assets folder done"
-    fi
+
 
     local mounts=()
     mounts+=(-v "$GOPATH:/go")
