@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/naturali/kmr/bucket"
+	"github.com/naturali/kmr/count"
 	"github.com/naturali/kmr/jobgraph"
 	"github.com/naturali/kmr/master"
 	kmrpb "github.com/naturali/kmr/pb"
@@ -32,6 +33,7 @@ type Worker struct {
 	flushOutSize                                      int
 	masterAddr                                        string
 	hostName                                          string
+	countMessage                                      *count.CountMessage
 }
 
 // NewWorker create a worker
@@ -123,6 +125,15 @@ func (w *Worker) Run() {
 			}
 		}()
 
+		if taskInfo.Phase == "reduce" {
+			w.countMessage = &count.CountMessage{
+				WorkerToMasterMap: taskInfo.CountMessage.WorkerToMasterMap,
+			}
+		} else {
+			w.countMessage = &count.CountMessage{
+				WorkerToMasterMap: make(map[string]int64),
+			}
+		}
 		err = w.executeTask(taskInfo)
 
 		retcode = kmrpb.ReportInfo_FINISH
@@ -137,6 +148,9 @@ func (w *Worker) Run() {
 		<-lastHeartbeatSent
 
 		for {
+			taskInfo.CountMessage = &kmrpb.CountMessage{
+				WorkerToMasterMap: w.countMessage.WorkerToMasterMap,
+			}
 			log.Info("Reporting job result, code", retcode, "job", taskInfo)
 			ret, err := masterClient.ReportTask(context.Background(), &kmrpb.ReportInfo{
 				TaskInfo: taskInfo,
@@ -171,6 +185,8 @@ func (w *Worker) executeTask(task *kmrpb.TaskInfo) (err error) {
 	cw.BindMapper(mapredNode.GetMapper())
 	cw.BindReducer(mapredNode.GetReducer())
 	cw.BindCombiner(mapredNode.GetCombiner())
+	cw.BindCountMessage(w.countMessage)
+
 	switch task.Phase {
 	case mapPhase:
 		err = w.runMapper(cw, mapredNode, task.SubIndex)

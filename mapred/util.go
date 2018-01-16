@@ -1,5 +1,9 @@
 package mapred
 
+import (
+	"github.com/naturali/kmr/count"
+)
+
 // ForEachValue iterate values using iterator
 func ForEachValue(values ValueIterator, handler func(interface{})) {
 	for v, err := values.Next(); err == nil; v, err = values.Next() {
@@ -7,8 +11,8 @@ func ForEachValue(values ValueIterator, handler func(interface{})) {
 	}
 }
 
-type mapperFuncType func(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{})
-type reducerFuncType func(key interface{}, valuesNext ValueIterator, output func(v interface{}), reporter interface{})
+type mapperFuncType func(key interface{}, value interface{}, output func(k interface{}, v interface{}), counter count.CountInterface)
+type reducerFuncType func(key interface{}, valuesNext ValueIterator, output func(v interface{}), counter interface{})
 
 type functionMapper struct {
 	MapperCommon
@@ -16,8 +20,8 @@ type functionMapper struct {
 	initFunc        func()
 }
 
-func (m *functionMapper) Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{}) {
-	m.userDefinedFunc(key, value, output, reporter)
+func (m *functionMapper) Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), counter count.CountInterface) {
+	m.userDefinedFunc(key, value, output, counter)
 }
 
 func (m *functionMapper) Init() {
@@ -45,8 +49,8 @@ type functionReducer struct {
 	initFunc        func()
 }
 
-func (m *functionReducer) Reduce(key interface{}, valuesNext ValueIterator, output func(v interface{}), reporter interface{}) {
-	m.userDefinedFunc(key, valuesNext, output, reporter)
+func (m *functionReducer) Reduce(key interface{}, valuesNext ValueIterator, output func(v interface{}), counter count.CountInterface) {
+	m.userDefinedFunc(key, valuesNext, output, counter)
 }
 
 func (m *functionReducer) Init() {

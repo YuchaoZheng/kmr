@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/naturali/kmr/bucket"
+	"github.com/naturali/kmr/count"
 	"github.com/naturali/kmr/mapred"
 	kmrpb "github.com/naturali/kmr/pb"
 	"github.com/naturali/kmr/records"
@@ -22,9 +23,10 @@ const (
 )
 
 type ComputeWrapClass struct {
-	mapper   mapred.Mapper
-	reducer  mapred.Reducer
-	combiner mapred.Combiner
+	mapper       mapred.Mapper
+	reducer      mapred.Reducer
+	combiner     mapred.Combiner
+	countMessage count.CountInterface
 }
 
 func (cw *ComputeWrapClass) BindMapper(mapper mapred.Mapper) {
@@ -37,6 +39,10 @@ func (cw *ComputeWrapClass) BindReducer(reducer mapred.Reducer) {
 
 func (cw *ComputeWrapClass) BindCombiner(combiner mapred.Combiner) {
 	cw.combiner = combiner
+}
+
+func (cw *ComputeWrapClass) BindCountMessage(countMessage count.CountInterface) {
+	cw.countMessage = countMessage
 }
 
 func (cw *ComputeWrapClass) sortAndCombine(aggregated []*records.Record) []*records.Record {
@@ -93,6 +99,7 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 	outputKV := make(chan *kmrpb.KV, 1024)
 	cw.mapper.Init()
 	keyClass, valueClass := cw.mapper.GetInputKeyTypeConverter(), cw.mapper.GetInputValueTypeConverter()
+
 	go func() {
 		for kvpair := range inputKV {
 			key := keyClass.FromBytes(kvpair.Key)
@@ -103,7 +110,7 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 				valueBytes := cw.mapper.GetOutputValueTypeConverter().ToBytes(v)
 				outputKV <- &kmrpb.KV{Key: keyBytes, Value: valueBytes}
 			}
-			cw.mapper.Map(key, value, collectFunc, nil)
+			cw.mapper.Map(key, value, collectFunc, cw.countMessage)
 		}
 		close(outputKV)
 	}()
@@ -164,8 +171,11 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 	go records.MergeSort(readers, sorted)
 
 	var curRecord *records.Record
-	combinerKeyClass, combinerValueClass :=
-		cw.combiner.GetInputKeyTypeConverter(), cw.combiner.GetInputValueTypeConverter()
+	var combinerKeyClass, combinerValueClass mapred.TypeConverter
+	if cw.combiner != nil {
+		combinerKeyClass, combinerValueClass =
+			cw.combiner.GetInputKeyTypeConverter(), cw.combiner.GetInputValueTypeConverter()
+	}
 	outputFunc := func(v interface{}) {
 		curRecord.Value = combinerValueClass.ToBytes(v)
 	}
@@ -262,7 +272,7 @@ func (cw *ComputeWrapClass) DoReduce(readers []records.RecordReader, writer reco
 				outputs <- &kmrpb.KV{Key: keyBytes, Value: valueBytes}
 				alreadyOutput = true
 			}
-			cw.reducer.Reduce(key, nextIter, collectFunc, nil)
+			cw.reducer.Reduce(key, nextIter, collectFunc, cw.countMessage)
 			if !alreadyOutput {
 				outputs <- nil
 			}

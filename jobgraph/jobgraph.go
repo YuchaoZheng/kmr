@@ -3,16 +3,18 @@ package jobgraph
 import (
 	"unicode"
 
+	"github.com/naturali/kmr/count"
 	"github.com/naturali/kmr/mapred"
 	"github.com/naturali/kmr/util/log"
 )
 
 type MapReduceNode struct {
-	index    int
-	mapper   mapred.Mapper
-	reducer  mapred.Reducer
-	combiner mapred.Combiner
-	jobNode  *JobNode
+	index        int
+	mapper       mapred.Mapper
+	reducer      mapred.Reducer
+	combiner     mapred.Combiner
+	jobNode      *JobNode
+	CountMessage *count.CountMessage
 
 	mapperBatchSize int
 	reducerCount    int
@@ -114,6 +116,9 @@ func (n *JobNode) AddMapper(mapper mapred.Mapper, batchSize int) *JobNode {
 			chainPrev:       n.endNode,
 			inputFiles:      n.endNode.outputFiles,
 			mapperBatchSize: batchSize,
+			CountMessage: &count.CountMessage{
+				WorkerToMasterMap: make(map[string]int64),
+			},
 		}
 		mrnode.interFiles.mrNode = mrnode
 		n.graph.mrNodeIndex++
@@ -143,6 +148,9 @@ func (n *JobNode) AddReducer(reducer mapred.Reducer, num int) *JobNode {
 			chainPrev:       n.endNode,
 			inputFiles:      n.endNode.outputFiles,
 			mapperBatchSize: 1,
+			CountMessage: &count.CountMessage{
+				WorkerToMasterMap: make(map[string]int64),
+			},
 		}
 		mrnode.interFiles.mrNode = mrnode
 		n.graph.mrNodeIndex++
@@ -222,6 +230,9 @@ func (j *Job) AddJobNode(inputs Files, name string) *JobNode {
 		inputFiles:      inputs,
 		mapper:          nil,
 		mapperBatchSize: 0,
+		CountMessage: &count.CountMessage{
+			WorkerToMasterMap: make(map[string]int64),
+		},
 	}
 	j.mrNodeIndex++
 

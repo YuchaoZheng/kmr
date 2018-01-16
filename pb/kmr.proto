@@ -7,6 +7,14 @@
      rpc ReportTask(ReportInfo) returns (Response) {}
  }
 
+ message KeyString {
+    string keyname = 1;
+ }
+
+ message ValueBytes {
+    bytes value = 1;
+ }
+
  message RegisterParams {
      string jobName = 1;
      int64 workerID = 2;
@@ -34,7 +42,12 @@
      int32 mapredNodeIndex = 2;
      string phase = 3;
      int32 subIndex = 4;
+     CountMessage countMessage = 5;
  }
+
+ message CountMessage {
+     map<string, int64> WorkerToMasterMap = 1;
+ } 
 
  message Response {
      int32 retcode = 1;
