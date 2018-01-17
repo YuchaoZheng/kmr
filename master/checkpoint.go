@@ -17,7 +17,6 @@ import (
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/util/log"
-	"time"
 )
 
 type TaskState struct {
