@@ -13,6 +13,7 @@ import (
 	"io/ioutil"
 	"sync"
 	"fmt"
+	"time"
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/util/log"
@@ -28,6 +29,7 @@ type CheckPoint struct {
 	ckMap map[string]TaskState
 	key   string
 	bk    bucket.Bucket
+	writeFlag bool
 }
 
 func (desc TaskDescription) mapKey() string {
@@ -41,20 +43,9 @@ func (c *CheckPoint) SetTaskState(desc TaskDescription, state TaskState) {
 
 	c.ckMap[desc.mapKey()] = state
 
-	writer, err := c.bk.OpenWrite(c.key)
-	defer writer.Close()
-	if err != nil {
-		log.Error(err)
-		return
+	if state.succeeded {
+		c.writeFlag = true
 	}
-
-	res, err := json.MarshalIndent(c.ckMap, "", "\t")
-	if err != nil {
-		log.Error(res, err)
-		return
-	}
-
-	_, err = writer.Write(res)
 	return
 }
 
@@ -104,6 +95,32 @@ func OpenCheckPoint(bk bucket.Bucket, key string) (cp *CheckPoint, err error) {
 			cp.ckMap = tmpMap
 		}
 	}
+
+	go func() {
+		timer := time.NewTicker(10 * time.Second)
+		for {
+			<-timer.C
+			if cp.writeFlag {
+				writer, err := cp.bk.OpenWrite(cp.key)
+				defer writer.Close()
+				if err != nil {
+					log.Error(err)
+					continue
+				}
+
+				cp.mutex.Lock()
+				res, err := json.MarshalIndent(cp.ckMap, "", "\t")
+				cp.mutex.Unlock()
+				if err != nil {
+					log.Error(res, err)
+					continue
+				}
+
+				_, err = writer.Write(res)
+				cp.writeFlag = false
+			}
+		}
+	}()
 
 	err = nil
 	return
