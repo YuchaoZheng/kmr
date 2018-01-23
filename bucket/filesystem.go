@@ -97,6 +97,15 @@ func (fsb FSBucket) CreateDir(files []string) error {
 func (fsb FSBucket) Delete(key string) error {
 	return os.Remove(filepath.Join(fsb.directory, key))
 }
+
 func (fsb FSBucket) ListFiles() ([]string, error) {
 	return nil, errors.New("fs list file is not implemented")
+}
+
+func (fsb FSBucket) GetFilePath(key string) string {
+	if fsb.directory != "/" {
+		return string(fsb.directory + "/" + key)
+	} else {
+		return key
+	}
 }

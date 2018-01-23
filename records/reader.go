@@ -11,6 +11,7 @@ import (
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/util/log"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 type RecordReader interface {
@@ -167,6 +168,38 @@ func NewReadAllBytesReader(reader bucket.ObjectReader) *SimpleRecordReader {
 	}
 }
 
+func NewLevelDbRecordReader(filename string) *SimpleRecordReader{
+	db, err := leveldb.OpenFile(filename, nil)
+	if err != nil {
+		panic("fail to create file reader")
+	}
+	preload := make(chan *Record, 1000)
+
+	go func() {
+		iter := db.NewIterator(nil, nil)
+		for iter.Next() {
+			key := iter.Key()
+			value := iter.Value()
+			keyb := make([]byte, len(key))
+			valueb := make([]byte, len(value))
+			copy(keyb, key)
+			copy(valueb, value)
+			preload <- &Record{Key: keyb, Value: valueb}
+		}
+		iter.Release()
+		err := iter.Error()
+		if err != nil {
+			log.Fatal(err)
+		}
+		close(preload)
+		db.Close()
+	} ()
+
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
+
 func feedStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		r := bufio.NewReaderSize(reader, 1024*1024)
@@ -226,9 +259,10 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 		return NewConsoleRecordReader()
 	case "readAllBytes":
 		return NewReadAllBytesReader(params["reader"].(bucket.ObjectReader))
+	case "leveldb":
+		return NewLevelDbRecordReader(params["filename"].(string))
 	default:
 		log.Debugf("Warning, ReaderType = \"%s\", you are using default reader(NewConsoleRecordReader).", name)
 		return NewConsoleRecordReader()
-
 	}
 }

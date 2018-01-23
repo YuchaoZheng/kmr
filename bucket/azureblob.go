@@ -131,3 +131,8 @@ func (bk *AzureBlobBucket) CreateDir(files []string) error {
 	// It do not need to create dir
 	return nil
 }
+
+func (bk *AzureBlobBucket) GetFilePath(key string) string {
+	panic("AzureBlobBucket can't use GetFilePath")
+	return ""
+}

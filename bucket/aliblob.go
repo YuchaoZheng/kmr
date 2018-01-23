@@ -111,3 +111,8 @@ func (bk *AliBlobBucket) CreateDir(files []string) error {
 	// Ali do not need to create dir
 	return nil
 }
+
+func (bk *AliBlobBucket) GetFilePath(key string) string {
+	panic("AliBlobBucket can't use GetFilePath")
+	return ""
+}

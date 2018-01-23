@@ -80,3 +80,8 @@ func (bk *RadosBucket) Delete(key string) error {
 func (bk *RadosBucket) CreateDir(files []string) error {
 	return errNotImplemented
 }
+
+func (bk *RadosBucket) GetFilePath(key string) string {
+	panic("RadosBucket can't use GetFilePath")
+	return ""
+}

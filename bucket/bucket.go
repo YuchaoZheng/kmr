@@ -24,6 +24,7 @@ type Bucket interface {
 	Delete(key string) error
 	ListFiles() ([]string, error)
 	CreateDir(files []string) error
+	GetFilePath(key string) string
 }
 
 // NewBucket Bucket factory

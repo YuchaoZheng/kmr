@@ -372,9 +372,17 @@ func (e *MapReduceExecutor) runReducer(cw *ComputeWrapClass, node *jobgraph.MapR
 
 	outputFile := node.GetOutputFiles().GetFiles()[subIndex]
 	writer, err := e.getBucket(node.GetOutputFiles()).OpenWrite(outputFile)
-	if err != nil {
-		log.Errorf("Failed to open reduce output file: %v", err)
-		return err
+	var recordWriter records.RecordWriter
+	switch node.GetOutputFiles().GetType() {
+	case "leveldb":
+		recordWriter = records.MakeRecordWriter("leveldb", map[string]interface{}{"filename": w.reduceBucket.GetFilePath(outputFile)})
+	default:
+		writer, err := e.getBucket(node.GetOutputFiles()).OpenWrite(outputFile)
+		if err != nil {
+			log.Errorf("Failed to open reduce output file: %v", err)
+			return err
+		}
+		recordWriter = records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 	}
 	recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
 	if err := cw.DoReduce(readers, recordWriter); err != nil {
@@ -389,15 +397,21 @@ func (e *MapReduceExecutor) runMapper(cw *ComputeWrapClass, node *jobgraph.MapRe
 	// Inputs Files
 	inputFiles := node.GetInputFiles().GetFiles()
 	readers := make([]records.RecordReader, 0)
+	var recordReader records.RecordReader
 	for fidx := int(subIndex) * node.GetMapperBatchSize(); fidx < len(inputFiles) && fidx < int(subIndex+1)*node.GetMapperBatchSize(); fidx++ {
 		file := inputFiles[fidx]
 		log.Debug("Opening mapper input file", file, "Bucket type: ", node.GetInputFiles().GetBucketType())
-		reader, err := e.getBucket(node.GetInputFiles()).OpenRead(file)
-		if err != nil {
-			log.Errorf("Fail to open object %s: %v", file, err)
-			return err
+		switch node.GetInputFiles().GetType() {
+		case "leveldb":
+			recordReader = records.MakeRecordReader(node.GetInputFiles().GetType(), map[string]interface{}{"filename": w.mapBucket.GetFilePath(file)})
+		default:
+			reader, err := e.getBucket(node.GetInputFiles()).OpenRead(file)
+			if err != nil {
+				log.Errorf("Fail to open object %s: %v", file, err)
+				return err
+			}
+			recordReader = records.MakeRecordReader(node.GetInputFiles().GetType(), map[string]interface{}{"reader": reader})
 		}
-		recordReader := records.MakeRecordReader(node.GetInputFiles().GetType(), map[string]interface{}{"reader": reader})
 		readers = append(readers, recordReader)
 	}
 	batchReader := records.NewChainReader(readers)

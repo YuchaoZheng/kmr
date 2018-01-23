@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/naturali/kmr/bucket"
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 type RecordWriter interface {
@@ -54,11 +55,46 @@ func NewFileRecordWriter(filename string) *SimpleRecordWriter {
 		bufWriter: bufio.NewWriter(file),
 	}
 }
+
 func NewStreamRecordWriter(writer bucket.ObjectWriter) *SimpleRecordWriter {
 	return &SimpleRecordWriter{
 		writer:    writer,
 		bufWriter: bufio.NewWriterSize(writer, 4*1024*1024),
 	}
+}
+
+type LeveldbRecordWriter struct {
+	db *leveldb.DB
+}
+
+func NewLeveldbRecordWriter(filename string) *LeveldbRecordWriter {
+	db, err := leveldb.OpenFile(filename, nil)
+	if err != nil {
+		panic("fail to create file reader")
+	}
+	return &LeveldbRecordWriter{db}
+}
+
+func (lrw *LeveldbRecordWriter) WriteRecord(record *Record) error {
+	err := lrw.db.Put(record.Key, record.Value, nil)
+	if err != nil {
+		panic("fail to put Record to leveldb")
+	}
+	return err
+}
+
+func (lrw *LeveldbRecordWriter) Write(p []byte) (int, error) {
+	panic("LeveldbRecordWriter must not call func Write")
+	return 0, nil
+}
+
+func (lrw *LeveldbRecordWriter) Flush() error {
+	panic("LeveldbRecordWriter must not call func Flush")
+	return nil
+}
+
+func (lrw *LeveldbRecordWriter) Close() error {
+	return lrw.db.Close()
 }
 
 func MakeRecordWriter(name string, params map[string]interface{}) RecordWriter {
@@ -71,8 +107,9 @@ func MakeRecordWriter(name string, params map[string]interface{}) RecordWriter {
 		return NewConsoleRecordWriter()
 	case "stream":
 		return NewStreamRecordWriter(params["writer"].(bucket.ObjectWriter))
+	case "leveldb":
+		return NewLeveldbRecordWriter(params["filename"].(string))
 	default:
 		return NewConsoleRecordWriter()
-
 	}
 }

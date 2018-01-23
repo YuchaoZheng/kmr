@@ -117,3 +117,8 @@ func (bk *RadosBucket) Delete(key string) error {
 func (bk *RadosBucket) CreateDir(files []string) error {
 	return errors.New("not support CreateDir on RadosBucket")
 }
+
+func (bk *RadosBucket) GetFilePath(key string) string {
+	panic("RadosBucket can't use GetFilePath")
+	return ""
+}
