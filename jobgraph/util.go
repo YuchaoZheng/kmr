@@ -1,9 +1,6 @@
 package jobgraph
 
-import (
-	"github.com/naturali/kmr/count"
-	"github.com/naturali/kmr/mapred"
-)
+import "github.com/naturali/kmr/mapred"
 
 type combinedMapper struct {
 	mapred.MapperCommon
@@ -11,14 +8,14 @@ type combinedMapper struct {
 	SecondMapper mapred.Mapper
 }
 
-func (cm *combinedMapper) Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), counter count.CountInterface) {
+func (cm *combinedMapper) Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{}) {
 	cm.FirstMapper.Map(key, value, func(k, v interface{}) {
 		if cm.SecondMapper != nil {
-			cm.SecondMapper.Map(k, v, output, counter)
+			cm.SecondMapper.Map(k, v, output, reporter)
 		} else {
 			output(k, v)
 		}
-	}, counter)
+	}, reporter)
 }
 
 // CombineMappers combine multiple mappers into one
@@ -65,6 +62,6 @@ type identityMapper struct {
 	mapred.MapperCommon
 }
 
-func (*identityMapper) Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), counter count.CountInterface) {
+func (*identityMapper) Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{}) {
 	output(key, value)
 }

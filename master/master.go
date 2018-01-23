@@ -37,7 +37,6 @@ type Master struct {
 	heartbeat     map[int64]chan heartBeatInput // Heartbeat channel for each worker
 	workerTaskMap map[int64]TaskDescription
 	workerNameMap map[int64]string
-	countMessage  map[string][]byte
 
 	job       *jobgraph.Job
 	scheduler Scheduler
@@ -60,7 +59,7 @@ func (m *Master) TaskSucceeded(t TaskDescription) error {
 func (m *Master) TaskFailed(t TaskDescription) error {
 	if m.ck != nil {
 		state := m.ck.GetTaskState(t)
-		log.Info("Task", t, "has failed for", state.failureTime, "times", "limit: ", m.maxFailureTime)
+		log.Info("Task", t,"has failed for", state.failureTime, "times", "limit: ", m.maxFailureTime)
 		m.ck.IncreaseTaskFailureTime(t)
 	}
 	return nil
@@ -236,7 +235,6 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 	go s.master.CheckHeartbeatForEachWorker(in.WorkerID, s.master.heartbeat[in.WorkerID])
 	log.Infof("deliver a task Jobname: %v MapredNodeID: %v Phase: %v PhaseSubIndex: %v to %v:%v",
 		t.JobNodeName, t.MapReduceNodeIndex, t.Phase, t.PhaseSubIndex, in.WorkerID, in.WorkerName)
-
 	return &kmrpb.Task{
 		Retcode: 0,
 		Taskinfo: &kmrpb.TaskInfo{
@@ -244,10 +242,6 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 			MapredNodeIndex: t.MapReduceNodeIndex,
 			Phase:           t.Phase,
 			SubIndex:        int32(t.PhaseSubIndex),
-			CountMessage: &kmrpb.CountMessage{
-				WorkerToMasterMap: s.master.scheduler.jobGraph.GetMapReduceNode(s.master.workerTaskMap[in.WorkerID].JobNodeName,
-					int(s.master.workerTaskMap[in.WorkerID].MapReduceNodeIndex)).CountMessage.WorkerToMasterMap,
-			},
 		},
 	}, err
 }
@@ -270,14 +264,6 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 	var heartbeatCode int
 	switch in.Retcode {
 	case kmrpb.ReportInfo_FINISH:
-		mrNode := s.master.scheduler.jobGraph.GetMapReduceNode(s.master.workerTaskMap[in.WorkerID].JobNodeName,
-			int(s.master.workerTaskMap[in.WorkerID].MapReduceNodeIndex))
-		if mrNode.CountMessage.WorkerToMasterMap == nil {
-			mrNode.CountMessage.WorkerToMasterMap = make(map[string]int64)
-		}
-		for key, value := range in.TaskInfo.CountMessage.WorkerToMasterMap {
-			mrNode.CountMessage.Add(key, value)
-		}
 		delete(s.master.workerTaskMap, in.WorkerID)
 		heartbeatCode = HeartBeatCodeFinished
 	case kmrpb.ReportInfo_DOING:

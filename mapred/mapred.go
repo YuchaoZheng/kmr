@@ -1,9 +1,5 @@
 package mapred
 
-import (
-	"github.com/naturali/kmr/count"
-)
-
 // InputTypeConverter Output type converter interface
 type InputTypeConverter interface {
 	GetInputKeyTypeConverter() TypeConverter
@@ -43,7 +39,7 @@ type ValueIterator interface {
 type Mapper interface {
 	InputOutputTypeConverter
 	mapperReducer
-	Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), counter count.CountInterface)
+	Map(key interface{}, value interface{}, output func(k interface{}, v interface{}), reporter interface{})
 	GetTypeConverters() *TypeConverters
 }
 
@@ -51,7 +47,7 @@ type Mapper interface {
 type Reducer interface {
 	InputOutputTypeConverter
 	mapperReducer
-	Reduce(key interface{}, valuesNext ValueIterator, output func(v interface{}), counter count.CountInterface)
+	Reduce(key interface{}, valuesNext ValueIterator, output func(v interface{}), reporter interface{})
 	GetTypeConverters() *TypeConverters
 }
 
@@ -128,3 +124,4 @@ func (tb *CombineCommon) Init() {
 func (tb *CombineCommon) GetTypeConverters() *TypeConverters {
 	return &tb.TypeConverters
 }
+
