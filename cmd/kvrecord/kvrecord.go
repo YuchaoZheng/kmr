@@ -10,6 +10,7 @@ import (
 
 	"github.com/naturali/kmr/records"
 	"github.com/naturali/kmr/util/log"
+
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -71,17 +72,11 @@ func main() {
 	case "leveldb":
 		switch (*keyword) {
 		case "-":
-			db, err := leveldb.OpenFile(*file, nil)
-			defer db.Close()
-			if err != nil {
-				log.Fatal(err)
+			recordReader := records.NewLevelDbRecordReader(*file)
+			for recordReader.HasNext() {
+				record := recordReader.Pop()
+				Output(record.Key, record.Value, ktype, vtype)
 			}
-			iter := db.NewIterator(nil, nil)
-			for iter.Next() {
-				Output(iter.Key(), iter.Value(), ktype, vtype)
-			}
-			iter.Release()
-			err = iter.Error()
 		default:
 			db, err := leveldb.OpenFile(*file, nil)
 			defer db.Close()
@@ -89,9 +84,8 @@ func main() {
 				log.Fatal(err)
 			}
 			iter := db.NewIterator(nil, nil)
-			for ok := iter.Seek([]byte(*keyword)); ok; ok = iter.Next() {
-				Output(iter.Key(), iter.Value(), ktype, vtype)
-			}
+			iter.Seek([]byte(*keyword))
+			Output(iter.Key(), iter.Value(), ktype, vtype)
 			iter.Release()
 			err = iter.Error()
 		}

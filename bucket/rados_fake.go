@@ -8,6 +8,8 @@ package bucket
 
 import (
 	"fmt"
+
+	"github.com/naturali/kmr/util/log"
 )
 
 var errNotImplemented = fmt.Errorf("RadosBucket is not implemented on non-linux platform")
@@ -82,6 +84,6 @@ func (bk *RadosBucket) CreateDir(files []string) error {
 }
 
 func (bk *RadosBucket) GetFilePath(key string) string {
-	panic("RadosBucket can't use GetFilePath")
+	log.Fatal("RadosBucket can't use GetFilePath")
 	return ""
 }

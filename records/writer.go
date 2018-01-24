@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/naturali/kmr/bucket"
+
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -77,9 +78,6 @@ func NewLeveldbRecordWriter(filename string) *LeveldbRecordWriter {
 
 func (lrw *LeveldbRecordWriter) WriteRecord(record *Record) error {
 	err := lrw.db.Put(record.Key, record.Value, nil)
-	if err != nil {
-		panic("fail to put Record to leveldb")
-	}
 	return err
 }
 

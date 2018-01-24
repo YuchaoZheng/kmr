@@ -22,7 +22,7 @@ type wordCountCombine struct {
 // Map Value is lines from file. Map function split lines into words and emit (word, 1) pairs
 func (*wordCountMap) Map(
 	key interface{}, value interface{}, output func(k, v interface{}), counter count.CountInterface) {
-	output(key.(string), uint64(1))
+	output(value.(string), uint64(1))
 }
 
 // Reduce key is word and valueNext is an iterator function. Add all values of one key togather to count the word occurs
@@ -74,14 +74,14 @@ func main() {
 	mapper, reducer, combiner := NewWordCountMapReduce()
 
 	var job jobgraph.Job
-	job.SetName("new-wordcount")
+	job.SetName("leveldb-bucket")
 	input := &jobgraph.InputFiles{
 		Files: []string{
-			"/tmp/kmr-yc/wordcount/output-wordcount-0-0",
+			"/home/yuchao/data/singers.txt",
 		},
-		Type: "leveldb",
+		Type: "textstream",
 	}
-	job.AddJobNode(input, "new-wordcount", "stream").
+	job.AddJobNode(input, "leveldb-bucket").
 		AddMapper(mapper, 1).
 		AddReducer(reducer, 1).
 			SetCombiner(combiner).

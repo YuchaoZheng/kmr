@@ -11,6 +11,7 @@ import (
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/util/log"
+
 	"github.com/syndtr/goleveldb/leveldb"
 )
 

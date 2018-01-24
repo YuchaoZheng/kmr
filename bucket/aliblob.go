@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"io"
 
+	"github.com/naturali/kmr/util/log"
+
 	"github.com/aliyun/aliyun-oss-go-sdk/oss"
 )
 
@@ -113,6 +115,6 @@ func (bk *AliBlobBucket) CreateDir(files []string) error {
 }
 
 func (bk *AliBlobBucket) GetFilePath(key string) string {
-	panic("AliBlobBucket can't use GetFilePath")
+	log.Fatal("AliBlobBucket can't use GetFilePath")
 	return ""
 }
