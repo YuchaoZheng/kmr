@@ -10,6 +10,7 @@ type Files interface {
 	GetFiles() []string
 	GetType() string
 	GetBucketType() int
+	setBucketType(int)
 }
 
 type InterFileNameGenerator struct {
@@ -58,13 +59,13 @@ func (i *InterFileNameGenerator) GetReducerInputFiles(reducerIdx int) []string {
 }
 
 const (
-	MapBucket = iota
+	MapBucket    = iota
 	ReduceBucket
 	InterBucket
 )
 
 type fileNameGenerator struct {
-	mrNode     *MapReduceNode
+	taskNode   TaskNode
 	fileCount  int
 	bucketType int
 }
@@ -72,7 +73,7 @@ type fileNameGenerator struct {
 func (f *fileNameGenerator) GetFiles() []string {
 	res := make([]string, f.fileCount)
 	for i := range res {
-		res[i] = fmt.Sprintf("output-%v-%v-%v", f.mrNode.jobNode.name, f.mrNode.index, i)
+		res[i] = fmt.Sprintf("output-%v-%v-%v", f.taskNode.GetJobNode().name, f.taskNode.GetIndex(), i)
 	}
 	return res
 }
@@ -85,14 +86,16 @@ func (f *fileNameGenerator) GetBucketType() int {
 	return f.bucketType
 }
 
-func (f *fileNameGenerator) SetBucketType(t int) {
+func (f *fileNameGenerator) setBucketType(t int) {
 	f.bucketType = t
 }
 
 // InputFiles Define input files
 type InputFiles struct {
-	Files []string
-	Type  string
+	Files      []string
+	Type       string
+	// Default: MapBucket
+	BucketType int
 }
 
 func (f *InputFiles) GetFiles() []string {
@@ -104,5 +107,9 @@ func (f *InputFiles) GetType() string {
 }
 
 func (f *InputFiles) GetBucketType() int {
-	return MapBucket
+	return f.BucketType
+}
+
+func (f *InputFiles) setBucketType(int) {
+	log.Panic("InputFiles doesn't have setBucketType api")
 }

@@ -6,6 +6,8 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"fmt"
+	"encoding/json"
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/mapred"
@@ -13,6 +15,7 @@ import (
 	"github.com/naturali/kmr/records"
 	"github.com/naturali/kmr/util"
 	"github.com/naturali/kmr/util/log"
+	"github.com/naturali/kmr/jobgraph"
 
 	"github.com/reusee/mmh3"
 )
@@ -164,8 +167,11 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 	go records.MergeSort(readers, sorted)
 
 	var curRecord *records.Record
-	combinerKeyClass, combinerValueClass :=
-		cw.combiner.GetInputKeyTypeConverter(), cw.combiner.GetInputValueTypeConverter()
+	var combinerKeyClass, combinerValueClass mapred.TypeConverter
+	if cw.combiner != nil {
+		combinerKeyClass, combinerValueClass =
+			cw.combiner.GetInputKeyTypeConverter(), cw.combiner.GetInputValueTypeConverter()
+	}
 	outputFunc := func(v interface{}) {
 		curRecord.Value = combinerValueClass.ToBytes(v)
 	}
@@ -348,4 +354,136 @@ type ValueIteratorFunc struct {
 // Next call IterFunc directly
 func (vif *ValueIteratorFunc) Next() (interface{}, error) {
 	return vif.IterFunc()
+}
+
+func (e *MapReduceExecutor) runReducer(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, subIndex int32) error {
+	readers := make([]records.RecordReader, 0)
+	interFiles := node.GetInterFileNameGenerator().GetReducerInputFiles(int(subIndex))
+	for _, interFile := range interFiles {
+		//TODO: How to deal with backup Task ?
+		reader, err := e.w.interBucket.OpenRead(interFile)
+		recordReader := records.NewStreamRecordReader(reader)
+		if err != nil {
+			log.Errorf("Failed to open intermediate: %v", err)
+		} else {
+			readers = append(readers, recordReader)
+		}
+	}
+
+	outputFile := node.GetOutputFiles().GetFiles()[subIndex]
+	writer, err := e.getBucket(node.GetOutputFiles()).OpenWrite(outputFile)
+	if err != nil {
+		log.Errorf("Failed to open reduce output file: %v", err)
+		return err
+	}
+	recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
+	if err := cw.DoReduce(readers, recordWriter); err != nil {
+		log.Errorf("Fail to Reduce: %v", err)
+		return err
+	}
+	err = recordWriter.Close()
+	return err
+}
+
+func (e *MapReduceExecutor) runMapper(cw *ComputeWrapClass, node *jobgraph.MapReduceNode, subIndex int32) error {
+	// Inputs Files
+	inputFiles := node.GetInputFiles().GetFiles()
+	readers := make([]records.RecordReader, 0)
+	for fidx := int(subIndex) * node.GetMapperBatchSize(); fidx < len(inputFiles) && fidx < int(subIndex+1)*node.GetMapperBatchSize(); fidx++ {
+		file := inputFiles[fidx]
+		log.Debug("Opening mapper input file", file, "Bucket type: ", node.GetInputFiles().GetBucketType())
+		reader, err := e.getBucket(node.GetInputFiles()).OpenRead(file)
+		if err != nil {
+			log.Errorf("Fail to open object %s: %v", file, err)
+			return err
+		}
+		recordReader := records.MakeRecordReader(node.GetInputFiles().GetType(), map[string]interface{}{"reader": reader})
+		readers = append(readers, recordReader)
+	}
+	batchReader := records.NewChainReader(readers)
+
+	// Intermediate writers
+	interFiles := node.GetInterFileNameGenerator().GetMapperOutputFiles(int(subIndex))
+	if len(interFiles) != node.GetReducerNum() {
+		//XXX: this should be done in validateGraph
+		log.Fatal("mapper output files count doesn't equal to reducer count")
+	}
+
+	if err := e.w.interBucket.CreateDir(interFiles); err != nil {
+		log.Errorf("cannot create dir err: %v", err)
+		return err
+	}
+	writers := make([]records.RecordWriter, 0)
+	for i := 0; i < node.GetReducerNum(); i++ {
+		intermediateFileName := interFiles[i]
+		writer, err := e.w.interBucket.OpenWrite(intermediateFileName)
+		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
+		if err != nil {
+			log.Errorf("Failed to open intermediate: %v", err)
+			return err
+		}
+		writers = append(writers, recordWriter)
+	}
+
+	cw.DoMap(batchReader, writers, e.w.flushBucket, e.flushOutSize, node.GetIndex(), node.GetReducerNum(), e.getWorker().workerID)
+
+	var err1, err2 error
+	//master should delete intermediate files
+	for _, reader := range readers {
+		err1 = reader.Close()
+		if err1 != nil {
+			log.Error(err1)
+		}
+	}
+	for _, writer := range writers {
+		err2 := writer.Close()
+		if err2 != nil {
+			log.Error(err2)
+		}
+	}
+
+	if err1 != nil || err2 != nil {
+		return errors.New(fmt.Sprint(err1, "\n", err2))
+	}
+
+	return nil
+}
+
+type MapReduceExecutor struct {
+	ExecutorBase
+	flushOutSize                                      int
+}
+
+func (e *MapReduceExecutor) isTargetFor(n jobgraph.TaskNode) bool {
+	_, ok := n.(*jobgraph.MapReduceNode)
+	return ok
+}
+func (e *MapReduceExecutor) handleTaskNode(info kmrpb.TaskInfo, n jobgraph.TaskNode) (err error) {
+	mrNode, _ := n.(*jobgraph.MapReduceNode)
+	cw := &ComputeWrapClass{}
+	if mrNode == nil {
+		x, _ := json.Marshal(info)
+		err = errors.New(fmt.Sprint("Cannot find mapred node", x))
+		log.Error(err)
+		return
+	}
+	cw.BindMapper(mrNode.GetMapper())
+	cw.BindReducer(mrNode.GetReducer())
+	cw.BindCombiner(mrNode.GetCombiner())
+	switch info.Phase {
+	case jobgraph.MapPhase:
+		err = e.runMapper(cw, mrNode, info.SubIndex)
+	case jobgraph.ReducePhase:
+		err = e.runReducer(cw, mrNode, info.SubIndex)
+	default:
+		x, _ := json.Marshal(info)
+		err = errors.New(fmt.Sprint("Unkown task phase", x))
+	}
+	return err
+}
+
+func NewMapReduceExecutor(flushOutSize int) *MapReduceExecutor {
+	return &MapReduceExecutor{
+		flushOutSize: flushOutSize,
+	}
 }

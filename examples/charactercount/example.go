@@ -2,6 +2,8 @@ package main
 
 import (
 	"unicode"
+	"io"
+	"fmt"
 
 	"github.com/naturali/kmr/cli"
 	"github.com/naturali/kmr/jobgraph"
@@ -27,6 +29,15 @@ type reverseMapper struct {
 
 type reverseReduce struct {
 	mapred.ReducerCommon
+}
+
+type outputText struct {
+	mapred.FilterCommon
+}
+
+func (*outputText) Filter(k, v interface{}, output io.Writer) error {
+	_, err := output.Write([]byte(fmt.Sprintln(k, v)))
+	return err
 }
 
 // Map Value is lines from file. Map function split lines into words and emit (word, 1) pairs
@@ -124,12 +135,21 @@ func main() {
 		},
 	}
 
+	outputFilter := &outputText{
+		FilterCommon: mapred.FilterCommon{
+			InputTypeKeyConverters: mapred.InputTypeKeyConverters {
+				InputKeyTypeConverter: mapred.Uint32{},
+				InputValueTypeConverter:mapred.String{},
+			},
+		},
+	}
+
 	var job jobgraph.Job
 	job.SetName("word-count")
 
 	inputs := &jobgraph.InputFiles{
 		// put a.t in the map bucket directory
-		Files: []string{"a.t"},
+		Files: []string{"/etc/passwd"},
 		Type:  "textstream",
 	}
 
@@ -144,7 +164,10 @@ func main() {
 	inputs2 := &jobgraph.InputFiles{
 		Files: append(cc.GetOutputFiles().GetFiles(), cs.GetOutputFiles().GetFiles()...),
 		Type:  "stream",
+		BucketType: jobgraph.ReduceBucket,
 	}
+
+	fmt.Print(inputs2.GetFiles())
 	ca := job.AddJobNode(inputs2, "CountAllCh").
 		AddReducer(wcreduce, 1).
 		DependOn(cc, cs)
@@ -152,6 +175,7 @@ func main() {
 	job.AddJobNode(ca.GetOutputFiles(), "Reverse").
 		AddMapper(rmap, 1).
 		AddReducer(rred, 1).
+		AddFilter(outputFilter, 1).
 		DependOn(ca)
 
 	cli.Run(&job)

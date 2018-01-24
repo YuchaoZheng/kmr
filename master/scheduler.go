@@ -10,11 +10,11 @@ import (
 )
 
 type TaskDescription struct {
-	ID                 int
-	JobNodeName        string
-	MapReduceNodeIndex int32
-	Phase              string
-	PhaseSubIndex      int
+	ID            int
+	JobNodeName   string
+	TaskNodeIndex int
+	Phase         int
+	PhaseSubIndex int
 }
 
 type ReportFunction func(task TaskDescription, state int)
@@ -24,27 +24,24 @@ type PushJobFunction func(jobDesc jobgraph.JobDescription) (state <-chan int)
 type EventHandler interface {
 	TaskSucceeded(jobDesc TaskDescription) error
 	TaskFailed(jobDesc TaskDescription) error
-	MapReduceNodeSucceed(node *jobgraph.MapReduceNode) error
-	MapReduceNodeFailed(node *jobgraph.MapReduceNode) error
+	TaskNodeSucceed(node jobgraph.TaskNode) error
+	TaskNodeFailed(node jobgraph.TaskNode) error
 	JobNodeSucceeded(node *jobgraph.JobNode) error
 	JobNodeFailed(node *jobgraph.JobNode) error
 	JobFinished(job *jobgraph.Job)
 }
 
 const (
-	StateIdle = iota
+	StateIdle       = iota
 	StateInProgress
 	StateCompleted
 
 	ResultOK
 	ResultFailed
-
-	mapPhase    = "map"
-	reducePhase = "reduce"
 )
 
-var NoAvailableJobError = errors.New("No available job")
-var DuplicateInitializeError = errors.New("Duplicated initialization")
+var NoAvailableJobError = errors.New("no available job")
+var DuplicateInitializeError = errors.New("duplicated initialization")
 
 // Scheduler responsible to schedule tasks.
 // every MapReduce node can be divided into (nMappers*nReducer) tasks.
@@ -52,76 +49,53 @@ var DuplicateInitializeError = errors.New("Duplicated initialization")
 type Scheduler struct {
 	jobGraph *jobgraph.Job
 
-	jobResultChanMap map[*mapReduceJob]chan<- int
-	availableJobs    []*mapReduceJob
+	jobResultChanMap map[*TaskNodeJob]chan<- int
+	availableJobs    []*TaskNodeJob
 	taskDescID       int
 
-	mapperFinishedCnt  map[*mapReduceJob]int
-	reducerFinishedCnt map[*mapReduceJob]int
-	phaseMap           map[*mapReduceJob]string
-	taskStateMap       map[*task]int
-	taskIDMap          map[int]*task
+	// how many task in TaskNode's phase x has been finished
+	phaseFinishedCnt map[*TaskNodeJob]map[int]int
+	phaseMap         map[*TaskNodeJob]int
+	taskStateMap     map[*task]int
+	taskIDMap        map[int]*task
 
 	requestFunc RequestFunction
 	reportFunc  ReportFunction
 }
 
 type task struct {
-	phase     string
-	taskIndex int
+	phase          int
+	phaseTaskIndex int
 
-	job *mapReduceJob
+	job *TaskNodeJob
 }
 
-type mapReduceJob struct {
-	//Use this can get a unique mapredNode
-	jobDesc               jobgraph.JobDescription
-	mapTasks, reduceTasks []*task
+type TaskNodeJob struct {
+	// Use this can get a unique TaskNode
+	taskNode   jobgraph.TaskNode
+	phaseTasks [][]*task
 }
 
-// createMapReduceTasks divide a MapReduceNode represented by a jobgraph.JobDescription into smallest executable task
-func (s *Scheduler) createMapReduceTasks(desc jobgraph.JobDescription) (mrJob *mapReduceJob, err error) {
-	mrJob = &mapReduceJob{}
-	mrNode := s.jobGraph.GetMapReduceNode(desc.JobNodeName, int(desc.MapReduceNodeIndex))
-	if mrNode == nil {
+// createMapReduceTasks divide a TaskNode represented by a jobgraph.JobDescription into smallest executable task
+func (s *Scheduler) createMapReduceTasks(desc jobgraph.JobDescription) (tnJob *TaskNodeJob, err error) {
+	tnJob = &TaskNodeJob{}
+	taskNode := s.jobGraph.GetTaskNode(desc.JobNodeName, int(desc.TaskNodeIndex))
+	if taskNode == nil {
 		err = errors.New(fmt.Sprint("Cannot get mapReduceNode from job graph, job description is", desc))
 		return
 	}
-	mrJob.jobDesc = desc
-	fillTask := func(job *mapReduceJob, phase string) {
-		var nTasks int
-		var batchSize int
-		jobDesc := job.jobDesc
-		switch phase {
-		case mapPhase:
-			batchSize = jobDesc.MapperBatchSize
-			nTasks = (jobDesc.MapperObjectSize + batchSize - 1) / batchSize
-		case reducePhase:
-			batchSize = 1
-			nTasks = jobDesc.ReducerNumber
-		}
-
-		tasks := make([]*task, nTasks)
-		for i := 0; i < nTasks; i++ {
-			tasks[i] = &task{
-				phase:     phase,
-				job:       job,
-				taskIndex: i,
+	tnJob.taskNode = taskNode
+	for i := 0; i < taskNode.GetPhaseCount(); i++ {
+		ts := make([]*task, taskNode.GetTaskCountOfPhase(i))
+		for idx := range ts {
+			ts[idx] = &task{
+				phase:          i,
+				job:            tnJob,
+				phaseTaskIndex: idx,
 			}
 		}
-
-		switch phase {
-		case mapPhase:
-			job.mapTasks = tasks
-		case reducePhase:
-			job.reduceTasks = tasks
-		default:
-			//XXX: should not be here
-			log.Fatal("Unknown phase")
-		}
+		tnJob.phaseTasks = append(tnJob.phaseTasks, ts)
 	}
-	fillTask(mrJob, mapPhase)
-	fillTask(mrJob, reducePhase)
 	return
 }
 
@@ -141,12 +115,12 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 	if s.requestFunc != nil || s.reportFunc != nil {
 		return DuplicateInitializeError
 	}
-	s.jobResultChanMap = make(map[*mapReduceJob]chan<- int)
-	s.availableJobs = make([]*mapReduceJob, 0)
+	s.jobResultChanMap = make(map[*TaskNodeJob]chan<- int)
+	s.availableJobs = make([]*TaskNodeJob, 0)
 	s.taskDescID = 0
-	s.mapperFinishedCnt = make(map[*mapReduceJob]int)
-	s.reducerFinishedCnt = make(map[*mapReduceJob]int)
-	s.phaseMap = make(map[*mapReduceJob]string)
+
+	s.phaseFinishedCnt = make(map[*TaskNodeJob]map[int]int)
+	s.phaseMap = make(map[*TaskNodeJob]int)
 	s.taskStateMap = make(map[*task]int)
 	s.taskIDMap = make(map[int]*task)
 
@@ -179,33 +153,33 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 				}
 				s.availableJobs = append(s.availableJobs, j)
 				s.jobResultChanMap[j] = state
-				if _, ok := s.mapperFinishedCnt[j]; ok {
-					log.Panic("Job repeated scheduled, mapperCnt != 0")
-				}
-				if _, ok := s.reducerFinishedCnt[j]; ok {
-					log.Panic("Job repeated scheduled, reducerCnt != 0")
+				if _, ok := s.phaseFinishedCnt[j]; ok {
+					log.Panic("Job repeated scheduled, phase finished map != nil")
 				}
 				if _, ok := s.phaseMap[j]; ok {
 					log.Panic("Job repeated scheduled, phase != nil")
 				}
-				s.mapperFinishedCnt[j], s.reducerFinishedCnt[j], s.phaseMap[j] = 0, 0, mapPhase
+				// create phase finish count map for this TaskNode job
+				s.phaseFinishedCnt[j] = make(map[int]int)
+				// start from phase 0
+				s.phaseMap[j] = 0
+
 				c.output <- state
 				close(c.output)
 			case c := <-requestJobChan:
 				out := requestJobOutput{TaskDescription{}, NoAvailableJobError}
 				finished := false
 				for _, processingJob := range s.availableJobs {
-					var tasks *[]*task
-					if s.mapperFinishedCnt[processingJob] == len(processingJob.mapTasks) {
-						s.phaseMap[processingJob] = reducePhase
-						tasks = &processingJob.reduceTasks
-					} else if s.mapperFinishedCnt[processingJob] < len(processingJob.mapTasks) &&
-						s.reducerFinishedCnt[processingJob] == 0 {
-						s.phaseMap[processingJob] = mapPhase
-						tasks = &processingJob.mapTasks
-					} else {
+					taskNode := processingJob.taskNode
+					jobPhase := s.phaseMap[processingJob]
+					if s.phaseFinishedCnt[processingJob][jobPhase] == taskNode.GetTaskCountOfPhase(jobPhase) {
+						jobPhase++
+						s.phaseMap[processingJob] = jobPhase
+					}
+					if jobPhase >= taskNode.GetPhaseCount() {
 						log.Fatal("After job node finished, this should not exist")
 					}
+					tasks := &processingJob.phaseTasks[jobPhase]
 					for _, task := range *tasks {
 						if _, ok := s.taskStateMap[task]; !ok {
 							s.taskStateMap[task] = StateIdle
@@ -215,11 +189,11 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 							s.taskDescID++
 							out = requestJobOutput{
 								TaskDescription{
-									ID:                 s.taskDescID,
-									JobNodeName:        processingJob.jobDesc.JobNodeName,
-									MapReduceNodeIndex: processingJob.jobDesc.MapReduceNodeIndex,
-									Phase:              s.phaseMap[processingJob],
-									PhaseSubIndex:      task.taskIndex,
+									ID:            s.taskDescID,
+									JobNodeName:   processingJob.taskNode.GetJobNode().GetName(),
+									TaskNodeIndex: processingJob.taskNode.GetIndex(),
+									Phase:         jobPhase,
+									PhaseSubIndex: task.phaseTaskIndex,
 								},
 								nil,
 							}
@@ -261,33 +235,39 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 				}
 
 				if state == StateInProgress {
-					switch s.phaseMap[t.job] {
-					case mapPhase:
-						s.mapperFinishedCnt[t.job]++
-					case reducePhase:
-						if s.mapperFinishedCnt[t.job] != len(t.job.mapTasks) {
-							log.Panic("Reducer start before mappers finished")
+					jobPhase := s.phaseMap[t.job]
+					// do check
+					for i := 0; i < jobPhase; i++ {
+						if s.phaseFinishedCnt[t.job][i] != t.job.taskNode.GetTaskCountOfPhase(i) {
+							log.Fatal("Phase", i + 1, "start before mappers finished in TaskNode", t.job.taskNode.GetIndex())
 						}
-						s.reducerFinishedCnt[t.job]++
-						if s.reducerFinishedCnt[t.job] == len(t.job.reduceTasks) {
-							curJobIdx := -1
-							// remove this job
-							for idx := range s.availableJobs {
-								if s.availableJobs[idx] == t.job {
-									curJobIdx = idx
-								}
-							}
-							if curJobIdx >= 0 {
-								s.availableJobs[curJobIdx] = s.availableJobs[len(s.availableJobs)-1]
-								s.availableJobs = s.availableJobs[:len(s.availableJobs)-1]
-								s.jobResultChanMap[t.job] <- ResultOK
-								close(s.jobResultChanMap[t.job])
-							} else {
-								log.Error("Cannot find job which is reporting to be done")
+					}
+					if s.phaseFinishedCnt[t.job][jobPhase] >= t.job.taskNode.GetTaskCountOfPhase(jobPhase) {
+						log.Fatal("Phase", jobPhase, "has finished but rescheduled")
+					}
+					s.phaseFinishedCnt[t.job][jobPhase]++
+
+					if s.phaseFinishedCnt[t.job][jobPhase] == t.job.taskNode.GetTaskCountOfPhase(jobPhase) {
+						s.phaseMap[t.job]++
+						jobPhase++
+					}
+
+					if jobPhase == t.job.taskNode.GetPhaseCount() {
+						curJobIdx := -1
+						// remove this job
+						for idx := range s.availableJobs {
+							if s.availableJobs[idx] == t.job {
+								curJobIdx = idx
 							}
 						}
-					default:
-						log.Panic("Phase map is not initialized")
+						if curJobIdx >= 0 {
+							s.availableJobs[curJobIdx] = s.availableJobs[len(s.availableJobs)-1]
+							s.availableJobs = s.availableJobs[:len(s.availableJobs)-1]
+							s.jobResultChanMap[t.job] <- ResultOK
+							close(s.jobResultChanMap[t.job])
+						} else {
+							log.Error("Cannot find job which is reporting to be done")
+						}
 					}
 					err := visitor.TaskSucceeded(rep.desc)
 					if err != nil {
@@ -317,12 +297,12 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 		reportJobChan <- reportJobInput{desc, result}
 	}
 
-	go s.MapReduceNodeSchedule(pushJobFunc, visitor)
+	go s.taskNodeSchedule(pushJobFunc, visitor)
 	return nil
 }
 
-// MapReduceNodeSchedule Schedule in granularity of MapReduceNode
-func (s *Scheduler) MapReduceNodeSchedule(pushJobFunc PushJobFunction, eventHandler EventHandler) {
+// MapReduceNodeSchedule Schedule in granularity of TaskNode
+func (s *Scheduler) taskNodeSchedule(pushJobFunc PushJobFunction, eventHandler EventHandler) {
 
 	waitForAll := &sync.WaitGroup{}
 	jobStatusMap := make(map[*jobgraph.JobNode]int)
@@ -343,23 +323,23 @@ func (s *Scheduler) MapReduceNodeSchedule(pushJobFunc PushJobFunction, eventHand
 	// topo sort and push job to master
 	var topo func(node *jobgraph.JobNode)
 	topo = func(node *jobgraph.JobNode) {
-		mrNodes := node.GetMapReduceNodes()
-		for idx := 0; idx < len(mrNodes); {
-			mrNode := mrNodes[idx]
-			jobDesc := mrNode.ToJobDesc()
+		taskNodes := node.GetTaskNodes()
+		for idx := 0; idx < len(taskNodes); {
+			taskNode := taskNodes[idx]
+			jobDesc := taskNode.ToJobDesc()
 			if jobDesc == nil {
 				log.Fatal("Failed to convert node ", jobDesc)
 			}
 			if result := <-pushJobFunc(*jobDesc); result == ResultOK {
-				err := eventHandler.MapReduceNodeSucceed(mrNode)
+				err := eventHandler.TaskNodeSucceed(taskNode)
 				if err == nil {
 					idx++
 				} else {
 					log.Error(err)
 				}
 			} else {
-				err := eventHandler.MapReduceNodeFailed(mrNode)
-				log.Error("Map reduce node failed", err, *mrNode)
+				err := eventHandler.TaskNodeFailed(taskNode)
+				log.Error("Map reduce node failed", err, taskNode.GetIndex())
 			}
 		}
 		setJobNodeStatus(node, StateCompleted)

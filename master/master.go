@@ -77,11 +77,14 @@ func (m *Master) getBucket(files jobgraph.Files) bucket.Bucket {
 	return nil
 }
 
-func (m *Master) MapReduceNodeSucceed(node *jobgraph.MapReduceNode) error {
-	// Delete inter files
-	for mapperIdx := 0; mapperIdx < node.GetMapperNum(); mapperIdx++ {
-		for reducerIdx := 0; reducerIdx < node.GetReducerNum(); reducerIdx++ {
-			m.interBucket.Delete(node.GetInterFileNameGenerator().GetFile(mapperIdx, reducerIdx))
+func (m *Master) TaskNodeSucceed(node jobgraph.TaskNode) error {
+	mrNode, ok := node.(*jobgraph.MapReduceNode)
+	if ok {
+		// Delete inter files
+		for mapperIdx := 0; mapperIdx < mrNode.GetMapperNum(); mapperIdx++ {
+			for reducerIdx := 0; reducerIdx < mrNode.GetReducerNum(); reducerIdx++ {
+				m.interBucket.Delete(mrNode.GetInterFileNameGenerator().GetFile(mapperIdx, reducerIdx))
+			}
 		}
 	}
 	// Delete previous node output files
@@ -93,7 +96,7 @@ func (m *Master) MapReduceNodeSucceed(node *jobgraph.MapReduceNode) error {
 	return nil
 }
 
-func (m *Master) MapReduceNodeFailed(node *jobgraph.MapReduceNode) error {
+func (m *Master) TaskNodeFailed(node jobgraph.TaskNode) error {
 	return nil
 }
 
@@ -146,7 +149,7 @@ func (m *Master) CheckHeartbeatForEachWorker(workerID int64, heartbeat chan hear
 			// the worker is doing his job
 			switch hb.heartBeatCode {
 			case HeartBeatCodeDead:
-				log.Error("Worker: ", workerID, "fuck up")
+				log.Error("Worker: ", workerID, "report task error", hb.task)
 				m.scheduler.ReportTask(hb.task, ResultFailed)
 				return
 			case HeartBeatCodeFinished:
@@ -234,13 +237,13 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 	s.master.workerTaskMap[in.WorkerID] = t
 	go s.master.CheckHeartbeatForEachWorker(in.WorkerID, s.master.heartbeat[in.WorkerID])
 	log.Infof("deliver a task Jobname: %v MapredNodeID: %v Phase: %v PhaseSubIndex: %v to %v:%v",
-		t.JobNodeName, t.MapReduceNodeIndex, t.Phase, t.PhaseSubIndex, in.WorkerID, in.WorkerName)
+		t.JobNodeName, t.TaskNodeIndex, t.Phase, t.PhaseSubIndex, in.WorkerID, in.WorkerName)
 	return &kmrpb.Task{
 		Retcode: 0,
 		Taskinfo: &kmrpb.TaskInfo{
 			JobNodeName:     t.JobNodeName,
-			MapredNodeIndex: t.MapReduceNodeIndex,
-			Phase:           t.Phase,
+			MapredNodeIndex: int32(t.TaskNodeIndex),
+			Phase:           int32(t.Phase),
 			SubIndex:        int32(t.PhaseSubIndex),
 		},
 	}, err
@@ -255,7 +258,7 @@ func (s *server) ReportTask(ctx context.Context, in *kmrpb.ReportInfo) (*kmrpb.R
 	if t, ok = s.master.workerTaskMap[in.WorkerID]; !ok {
 		log.Errorf("WorkerID %v is not working on anything or has been timeout", in.WorkerID)
 		// this timeout worker is still alive and will not send any heartbeat on this job never
-		if in.Retcode != HeartBeatCodePulse {
+		if in.Retcode != kmrpb.ReportInfo_DOING {
 			log.Errorf("WorkerID %v had been timeout but now is alive", in.WorkerID)
 		}
 		return &kmrpb.Response{Retcode: 0}, nil

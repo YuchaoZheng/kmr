@@ -1,0 +1,73 @@
+{
+    "local": {
+        "mapBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/"
+            }
+        },
+        "flushBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/tmp/kmr/${JOBNAME}-inter"
+            }
+        },
+        "interBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/tmp/kmr/${JOBNAME}-inter"
+            }
+        },
+        "reduceBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/tmp/kmr/${JOBNAME}"
+            }
+        }
+    },
+    "remote": {
+        "podDescription": {
+            "volumeMounts": [
+                {
+                    "name": "cephfs",
+                    "mountPath": "/cephfs"
+                }
+            ],
+            "volumes": [
+                {
+                    "name": "cephfs",
+                    "hostPath": {
+                        "path": "/mnt/cephfs"
+                    }
+                }
+            ]
+        },
+        "mapBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/"
+            }
+        },
+        "interBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/tmp/cephfs/kmr/${JOBNAME}-inter"
+            }
+        },
+        "reduceBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/tmp/cephfs/kmr/${JOBNAME}"
+            }
+        },
+        "flushBucket": {
+            "bucketType": "filesystem",
+            "config": {
+                "directory": "/tmp/kmr/${JOBNAME}-inter"
+            }
+        },
+        "dockerRegistry": "in.fds.so:5000",
+        "namespace": "kmr",
+        "serviceAccount": "kmr-master"
+    }
+}

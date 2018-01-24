@@ -32,7 +32,7 @@
  message TaskInfo {
      string jobNodeName = 1;
      int32 mapredNodeIndex = 2;
-     string phase = 3;
+     int32 phase = 3;
      int32 subIndex = 4;
  }
 
