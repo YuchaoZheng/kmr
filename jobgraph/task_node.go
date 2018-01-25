@@ -199,7 +199,7 @@ func (n *JobNode) AddMapper(mapper mapred.Mapper, batchSize int) *JobNode {
 				mapper:          mapper,
 				mapperBatchSize: batchSize,
 			}
-			mrnode.outputFiles = &fileNameGenerator{mrnode, 0, ReduceBucket}
+			mrnode.outputFiles = &fileNameGenerator{mrnode, 0, ReduceBucket, StreamFileType}
 			n.startNode = mrnode
 			n.endNode = mrnode
 			n.graph.roots = append(n.graph.roots, n)
@@ -222,8 +222,11 @@ func (n *JobNode) AddReducer(reducer mapred.Reducer, num int) *JobNode {
 	if num <= 0 {
 		num = 1
 	}
+
+	fileType := StreamFileType
 	if !ok || originMr.reducer != nil {
 		n.AddMapper(IdentityMapper, 1)
+		fileType = n.endNode.GetOutputFiles().GetFileType()
 		originMr, ok = n.endNode.(*MapReduceNode)
 		if !ok || originMr == nil || originMr.GetMapper() == nil || originMr.GetReducer() != nil {
 			// should never happen
@@ -231,8 +234,13 @@ func (n *JobNode) AddReducer(reducer mapred.Reducer, num int) *JobNode {
 		}
 	}
 	originMr.reducer = reducer
-	originMr.outputFiles = &fileNameGenerator{originMr, num, ReduceBucket}
+	originMr.outputFiles = &fileNameGenerator{originMr, num, ReduceBucket, fileType}
 	originMr.reducerCount = num
+	return n
+}
+
+func (n *JobNode) SetOutputType(fileType string) *JobNode {
+	n.endNode.GetOutputFiles().SetFileType(fileType)
 	return n
 }
 
@@ -302,7 +310,7 @@ func (n *JobNode) AddFilter(filter mapred.Filter, batchSize int) *JobNode {
 		n.endNode.setNext(fn)
 	}
 	n.graph.taskNodes = append(n.graph.taskNodes, fn)
-	fn.outputFiles = &fileNameGenerator{fn, len(fn.inputFiles.GetFiles()), ReduceBucket}
+	fn.outputFiles = &fileNameGenerator{fn, len(fn.inputFiles.GetFiles()), ReduceBucket, StreamFileType}
 	n.endNode = fn
 	return n
 }

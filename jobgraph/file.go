@@ -8,7 +8,8 @@ import (
 
 type Files interface {
 	GetFiles() []string
-	GetType() string
+	GetFileType() string
+	SetFileType(string)
 	GetBucketType() int
 	setBucketType(int)
 }
@@ -64,10 +65,16 @@ const (
 	InterBucket
 )
 
+const (
+	LeveldbFileType = "leveldb"
+	StreamFileType = "stream"
+)
+
 type fileNameGenerator struct {
 	taskNode   TaskNode
 	fileCount  int
 	bucketType int
+	fileType   string
 }
 
 func (f *fileNameGenerator) GetFiles() []string {
@@ -78,8 +85,12 @@ func (f *fileNameGenerator) GetFiles() []string {
 	return res
 }
 
-func (f *fileNameGenerator) GetType() string {
-	return "stream"
+func (f *fileNameGenerator) GetFileType() string {
+	return f.fileType
+}
+
+func (f *fileNameGenerator) SetFileType(fileType string) {
+	f.fileType = fileType
 }
 
 func (f *fileNameGenerator) GetBucketType() int {
@@ -102,8 +113,12 @@ func (f *InputFiles) GetFiles() []string {
 	return f.Files
 }
 
-func (f *InputFiles) GetType() string {
+func (f *InputFiles) GetFileType() string {
 	return f.Type
+}
+
+func (f *InputFiles) SetFileType(fileType string) {
+	log.Fatal("InputFiles can't use func SetFileType")
 }
 
 func (f *InputFiles) GetBucketType() int {

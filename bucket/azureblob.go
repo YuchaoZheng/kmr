@@ -6,6 +6,8 @@ import (
 	"io"
 	"strconv"
 
+	"github.com/naturali/kmr/util/log"
+
 	"github.com/Azure/azure-sdk-for-go/storage"
 )
 
@@ -130,4 +132,9 @@ func (bk *AzureBlobBucket) ListFiles() ([]string, error) {
 func (bk *AzureBlobBucket) CreateDir(files []string) error {
 	// It do not need to create dir
 	return nil
+}
+
+func (bk *AzureBlobBucket) GetFilePath(key string) string {
+	log.Fatal("AzureBlobBucket can't use GetFilePath")
+	return ""
 }

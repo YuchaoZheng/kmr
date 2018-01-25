@@ -11,6 +11,8 @@ import (
 
 	"github.com/naturali/kmr/bucket"
 	"github.com/naturali/kmr/util/log"
+
+	"github.com/syndtr/goleveldb/leveldb"
 )
 
 type RecordReader interface {
@@ -90,6 +92,7 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 }
 
 func NewStreamRecordReader(reader bucket.ObjectReader) *SimpleRecordReader {
+
 	preload := make(chan *Record, 1000)
 
 	feedStream(preload, reader)
@@ -167,6 +170,38 @@ func NewReadAllBytesReader(reader bucket.ObjectReader) *SimpleRecordReader {
 	}
 }
 
+func NewLevelDbRecordReader(filename string) *SimpleRecordReader{
+	db, err := leveldb.OpenFile(filename, nil)
+	if err != nil {
+		panic("fail to create file reader")
+	}
+	preload := make(chan *Record, 1000)
+
+	go func() {
+		iter := db.NewIterator(nil, nil)
+		for iter.Next() {
+			key := iter.Key()
+			value := iter.Value()
+			keyb := make([]byte, len(key))
+			valueb := make([]byte, len(value))
+			copy(keyb, key)
+			copy(valueb, value)
+			preload <- &Record{Key: keyb, Value: valueb}
+		}
+		iter.Release()
+		err := iter.Error()
+		if err != nil {
+			log.Fatal(err)
+		}
+		close(preload)
+		db.Close()
+	} ()
+
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
+
 func feedStream(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		r := bufio.NewReaderSize(reader, 1024*1024)
@@ -209,26 +244,36 @@ func feedTextStream(preload chan<- *Record, reader io.Reader) {
 func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
+	var reader bucket.ObjectReader
+	var err error
+	if name == "bz2" || name == "stream" || name == "textstream" || name == "readAllBytes" {
+		reader, err = params["bucket"].(bucket.Bucket).OpenRead(params["filename"].(string))
+		if err != nil {
+			log.Errorf("Fail to open object %s: %v", params["filename"].(string), err)
+		}
+	}
 	switch name {
 	case "textfile":
 		return NewTextFileRecordReader(params["filename"].(string))
 	case "bz2":
-		return NewBz2RecordReader(params["reader"].(bucket.ObjectReader))
+		return NewBz2RecordReader(reader.(bucket.ObjectReader))
 	case "file":
 		return NewFileRecordReader(params["filename"].(string))
 	case "stream":
-		return NewStreamRecordReader(params["reader"].(bucket.ObjectReader))
+		return NewStreamRecordReader(reader.(bucket.ObjectReader))
 	case "textstream":
-		return NewTextStreamRecordReader(params["reader"].(bucket.ObjectReader))
+		return NewTextStreamRecordReader(reader.(bucket.ObjectReader))
 	case "memory":
 		return NewMemoryRecordReader(params["data"].([]*Record))
 	case "console":
 		return NewConsoleRecordReader()
 	case "readAllBytes":
-		return NewReadAllBytesReader(params["reader"].(bucket.ObjectReader))
+		return NewReadAllBytesReader(reader.(bucket.ObjectReader))
+	case "leveldb":
+		filename := params["bucket"].(bucket.Bucket).GetFilePath(params["filename"].(string))
+		return NewLevelDbRecordReader(filename)
 	default:
 		log.Debugf("Warning, ReaderType = \"%s\", you are using default reader(NewConsoleRecordReader).", name)
 		return NewConsoleRecordReader()
-
 	}
 }

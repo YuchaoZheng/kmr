@@ -120,11 +120,10 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 				filename := bucket.FlushoutFileName("map", mapID, len(flushOutFiles), workerID)
 				sem.Acquire(1)
 				go func(filename string, data []*records.Record) {
-					writer, err := flushBucket.OpenWrite(filename)
-					recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
-					if err != nil {
-						log.Fatal(err)
-					}
+					recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{
+						"filename": filename,
+						"bucket":   flushBucket,
+					})
 					for _, r := range cw.sortAndCombine(data) {
 						if err := recordWriter.WriteRecord(r); err != nil {
 							log.Fatal(err)
@@ -154,11 +153,13 @@ func (cw *ComputeWrapClass) DoMap(rr records.RecordReader, writers []records.Rec
 
 	readers := make([]records.RecordReader, 0)
 	for _, file := range flushOutFiles {
-		reader, err := flushBucket.OpenRead(file)
 		if err != nil {
 			log.Fatalf("Failed to open intermediate: %v", err)
 		}
-		recordReader := records.MakeRecordReader("stream", map[string]interface{}{"reader": reader})
+		recordReader := records.MakeRecordReader("stream", map[string]interface{}{
+			"filename": file,
+			"bucket":   flushBucket,
+		})
 		readers = append(readers, recordReader)
 	}
 	readers = append(readers, records.MakeRecordReader("memory", map[string]interface{}{"data": aggregated}))
@@ -371,17 +372,15 @@ func (e *MapReduceExecutor) runReducer(cw *ComputeWrapClass, node *jobgraph.MapR
 	}
 
 	outputFile := node.GetOutputFiles().GetFiles()[subIndex]
-	writer, err := e.getBucket(node.GetOutputFiles()).OpenWrite(outputFile)
-	if err != nil {
-		log.Errorf("Failed to open reduce output file: %v", err)
-		return err
-	}
-	recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
+	recordWriter := records.MakeRecordWriter(node.GetOutputFiles().GetFileType(), map[string]interface{}{
+		"filename": outputFile,
+		"bucket":   e.getBucket(node.GetOutputFiles()),
+	})
 	if err := cw.DoReduce(readers, recordWriter); err != nil {
 		log.Errorf("Fail to Reduce: %v", err)
 		return err
 	}
-	err = recordWriter.Close()
+	err := recordWriter.Close()
 	return err
 }
 
@@ -392,12 +391,10 @@ func (e *MapReduceExecutor) runMapper(cw *ComputeWrapClass, node *jobgraph.MapRe
 	for fidx := int(subIndex) * node.GetMapperBatchSize(); fidx < len(inputFiles) && fidx < int(subIndex+1)*node.GetMapperBatchSize(); fidx++ {
 		file := inputFiles[fidx]
 		log.Debug("Opening mapper input file", file, "Bucket type: ", node.GetInputFiles().GetBucketType())
-		reader, err := e.getBucket(node.GetInputFiles()).OpenRead(file)
-		if err != nil {
-			log.Errorf("Fail to open object %s: %v", file, err)
-			return err
-		}
-		recordReader := records.MakeRecordReader(node.GetInputFiles().GetType(), map[string]interface{}{"reader": reader})
+		recordReader := records.MakeRecordReader(node.GetInputFiles().GetFileType(), map[string]interface{}{
+			"filename": file,
+			"bucket":   e.getBucket(node.GetInputFiles()),
+		})
 		readers = append(readers, recordReader)
 	}
 	batchReader := records.NewChainReader(readers)
@@ -416,12 +413,10 @@ func (e *MapReduceExecutor) runMapper(cw *ComputeWrapClass, node *jobgraph.MapRe
 	writers := make([]records.RecordWriter, 0)
 	for i := 0; i < node.GetReducerNum(); i++ {
 		intermediateFileName := interFiles[i]
-		writer, err := e.w.interBucket.OpenWrite(intermediateFileName)
-		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{"writer": writer})
-		if err != nil {
-			log.Errorf("Failed to open intermediate: %v", err)
-			return err
-		}
+		recordWriter := records.MakeRecordWriter("stream", map[string]interface{}{
+			"filename": intermediateFileName,
+			"bucket":   e.w.interBucket,
+		})
 		writers = append(writers, recordWriter)
 	}
 
