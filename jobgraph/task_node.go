@@ -199,7 +199,7 @@ func (n *JobNode) AddMapper(mapper mapred.Mapper, batchSize int) *JobNode {
 				mapper:          mapper,
 				mapperBatchSize: batchSize,
 			}
-			mrnode.outputFiles = &fileNameGenerator{mrnode, 0, ReduceBucket, "stream"}
+			mrnode.outputFiles = &fileNameGenerator{mrnode, 0, ReduceBucket, KVRecordFileType}
 			n.startNode = mrnode
 			n.endNode = mrnode
 			n.graph.roots = append(n.graph.roots, n)
@@ -223,7 +223,7 @@ func (n *JobNode) AddReducer(reducer mapred.Reducer, num int) *JobNode {
 		num = 1
 	}
 
-	fileType := "stream"
+	fileType := KVRecordFileType
 	if !ok || originMr.reducer != nil {
 		n.AddMapper(IdentityMapper, 1)
 		fileType = n.endNode.GetOutputFiles().GetFileType()
@@ -310,7 +310,7 @@ func (n *JobNode) AddFilter(filter mapred.Filter, batchSize int) *JobNode {
 		n.endNode.setNext(fn)
 	}
 	n.graph.taskNodes = append(n.graph.taskNodes, fn)
-	fn.outputFiles = &fileNameGenerator{fn, len(fn.inputFiles.GetFiles()), ReduceBucket}
+	fn.outputFiles = &fileNameGenerator{fn, len(fn.inputFiles.GetFiles()), ReduceBucket, KVRecordFileType}
 	n.endNode = fn
 	return n
 }

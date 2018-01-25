@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/naturali/kmr/cli"
-	"github.com/naturali/kmr/count"
 	"github.com/naturali/kmr/jobgraph"
 	"github.com/naturali/kmr/mapred"
 )
@@ -21,13 +20,13 @@ type wordCountCombine struct {
 
 // Map Value is lines from file. Map function split lines into words and emit (word, 1) pairs
 func (*wordCountMap) Map(
-	key interface{}, value interface{}, output func(k, v interface{}), counter count.CountInterface) {
+	key interface{}, value interface{}, output func(k, v interface{}), reporter interface{}) {
 	output(value.(string), uint64(1))
 }
 
 // Reduce key is word and valueNext is an iterator function. Add all values of one key togather to count the word occurs
 func (*wordCountReduce) Reduce(
-	key interface{}, valuesNext mapred.ValueIterator, output func(v interface{}), counter count.CountInterface) {
+	key interface{}, valuesNext mapred.ValueIterator, output func(v interface{}), reporter interface{}) {
 	output(uint64(1))
 }
 
@@ -77,7 +76,7 @@ func main() {
 	job.SetName("leveldb-bucket")
 	input := &jobgraph.InputFiles{
 		Files: []string{
-			"/home/yuchao/data/singers.txt",
+			"/etc/passwd",
 		},
 		Type: "textstream",
 	}

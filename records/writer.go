@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/naturali/kmr/bucket"
+	"github.com/naturali/kmr/util/log"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -58,6 +59,7 @@ func NewFileRecordWriter(filename string) *SimpleRecordWriter {
 }
 
 func NewStreamRecordWriter(writer bucket.ObjectWriter) *SimpleRecordWriter {
+
 	return &SimpleRecordWriter{
 		writer:    writer,
 		bufWriter: bufio.NewWriterSize(writer, 4*1024*1024),
@@ -104,9 +106,14 @@ func MakeRecordWriter(name string, params map[string]interface{}) RecordWriter {
 	case "console":
 		return NewConsoleRecordWriter()
 	case "stream":
-		return NewStreamRecordWriter(params["writer"].(bucket.ObjectWriter))
+		writer, err := params["bucket"].(bucket.Bucket).OpenWrite(params["filename"].(string))
+		if err != nil {
+			log.Fatal(err)
+		}
+		return NewStreamRecordWriter(writer.(bucket.ObjectWriter))
 	case "leveldb":
-		return NewLeveldbRecordWriter(params["filename"].(string))
+		filename := params["bucket"].(bucket.Bucket).GetFilePath(params["filename"].(string))
+		return NewLeveldbRecordWriter(filename)
 	default:
 		return NewConsoleRecordWriter()
 	}

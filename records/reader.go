@@ -92,6 +92,7 @@ func NewFileRecordReader(filename string) *SimpleRecordReader {
 }
 
 func NewStreamRecordReader(reader bucket.ObjectReader) *SimpleRecordReader {
+
 	preload := make(chan *Record, 1000)
 
 	feedStream(preload, reader)
@@ -243,25 +244,34 @@ func feedTextStream(preload chan<- *Record, reader io.Reader) {
 func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
+	var reader bucket.ObjectReader
+	var err error
+	if name == "bz2" || name == "stream" || name == "textstream" || name == "readAllBytes" {
+		reader, err = params["bucket"].(bucket.Bucket).OpenRead(params["filename"].(string))
+		if err != nil {
+			log.Errorf("Fail to open object %s: %v", params["filename"].(string), err)
+		}
+	}
 	switch name {
 	case "textfile":
 		return NewTextFileRecordReader(params["filename"].(string))
 	case "bz2":
-		return NewBz2RecordReader(params["reader"].(bucket.ObjectReader))
+		return NewBz2RecordReader(reader.(bucket.ObjectReader))
 	case "file":
 		return NewFileRecordReader(params["filename"].(string))
 	case "stream":
-		return NewStreamRecordReader(params["reader"].(bucket.ObjectReader))
+		return NewStreamRecordReader(reader.(bucket.ObjectReader))
 	case "textstream":
-		return NewTextStreamRecordReader(params["reader"].(bucket.ObjectReader))
+		return NewTextStreamRecordReader(reader.(bucket.ObjectReader))
 	case "memory":
 		return NewMemoryRecordReader(params["data"].([]*Record))
 	case "console":
 		return NewConsoleRecordReader()
 	case "readAllBytes":
-		return NewReadAllBytesReader(params["reader"].(bucket.ObjectReader))
+		return NewReadAllBytesReader(reader.(bucket.ObjectReader))
 	case "leveldb":
-		return NewLevelDbRecordReader(params["filename"].(string))
+		filename := params["bucket"].(bucket.Bucket).GetFilePath(params["filename"].(string))
+		return NewLevelDbRecordReader(filename)
 	default:
 		log.Debugf("Warning, ReaderType = \"%s\", you are using default reader(NewConsoleRecordReader).", name)
 		return NewConsoleRecordReader()
