@@ -67,7 +67,7 @@ const (
 
 const (
 	LeveldbFileType = "leveldb"
-	KVRecordFileType = "stream"
+	StreamFileType = "stream"
 )
 
 type fileNameGenerator struct {
