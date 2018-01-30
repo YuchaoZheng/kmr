@@ -8,6 +8,7 @@ import (
 	"github.com/naturali/kmr/util/log"
 
 	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/ryszard/tfutils/go/tfrecord"
 )
 
 type RecordWriter interface {
@@ -66,6 +67,39 @@ func NewStreamRecordWriter(writer bucket.ObjectWriter) *SimpleRecordWriter {
 	}
 }
 
+type TfRecordRecordWriter struct {
+	writer bucket.ObjectWriter
+}
+
+func NewTfRecordRecordWriter(writer bucket.ObjectWriter) *TfRecordRecordWriter {
+	return &TfRecordRecordWriter{
+		writer: writer,
+	}
+}
+
+func (trw *TfRecordRecordWriter) WriteRecord(record *Record) error {
+	err := tfrecord.Write(trw.writer, record.Key)
+	if err != nil {
+		return err
+	}
+	err = tfrecord.Write(trw.writer, record.Value)
+	return err
+}
+
+func (trw *TfRecordRecordWriter) Write(p []byte) (int, error) {
+	panic("TfRecordRecordWriter must not call func Write")
+	return 0, nil
+}
+
+func (trw *TfRecordRecordWriter) Flush() error {
+	panic("TfRecordRecordWriter must not call func Flush")
+	return nil
+}
+
+func (trw *TfRecordRecordWriter) Close() error {
+	return trw.writer.Close()
+}
+
 type LeveldbRecordWriter struct {
 	db *leveldb.DB
 }
@@ -100,20 +134,26 @@ func (lrw *LeveldbRecordWriter) Close() error {
 func MakeRecordWriter(name string, params map[string]interface{}) RecordWriter {
 	// TODO: registry
 	// noway to instance directly by type name in Golang
+	var writer bucket.ObjectWriter
+	var err error
+	if name == "stream" || name == "tfrecord" {
+		writer, err = params["bucket"].(bucket.Bucket).OpenWrite(params["filename"].(string))
+		if err != nil {
+			log.Errorf("Fail to open object %s: %v", params["filename"].(string), err)
+		}
+	}
 	switch name {
 	case "file":
 		return NewFileRecordWriter(params["filename"].(string))
 	case "console":
 		return NewConsoleRecordWriter()
 	case "stream":
-		writer, err := params["bucket"].(bucket.Bucket).OpenWrite(params["filename"].(string))
-		if err != nil {
-			log.Fatal(err)
-		}
-		return NewStreamRecordWriter(writer.(bucket.ObjectWriter))
+		return NewStreamRecordWriter(writer)
 	case "leveldb":
 		filename := params["bucket"].(bucket.Bucket).GetFilePath(params["filename"].(string))
 		return NewLeveldbRecordWriter(filename)
+	case "tfrecord":
+		return NewTfRecordRecordWriter(writer)
 	default:
 		return NewConsoleRecordWriter()
 	}
