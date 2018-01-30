@@ -188,6 +188,12 @@
   revision = "64b85163255bbb6af4f0d0eab61ecdda7ea7cd96"
 
 [[projects]]
+  branch = "master"
+  name = "github.com/ryszard/tfutils"
+  packages = ["go/tfrecord"]
+  revision = "98de232c7c683af966681fe05225fb2e53c82679"
+
+[[projects]]
   name = "github.com/satori/uuid"
   packages = ["."]
   revision = "879c5887cd475cd7864858769793b2ceb0d44feb"
@@ -283,6 +289,6 @@
 [solve-meta]
   analyzer-name = "dep"
   analyzer-version = 1
-  inputs-digest = "5470cd3850e3084dc7308dfceaa74fe1a6e62971b3bb2f73684ffbd705c293fd"
+  inputs-digest = "0c60845d4cb5722a83e6bbbdcc01027be2819bf44e288bde628e5bc0f04ab75a"
   solver-name = "gps-cdcl"
   solver-version = 1
