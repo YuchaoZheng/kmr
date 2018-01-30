@@ -79,10 +79,6 @@ func NewTfRecordRecordWriter(writer bucket.ObjectWriter) *TfRecordRecordWriter {
 
 func (trw *TfRecordRecordWriter) WriteRecord(record *Record) error {
 	err := tfrecord.Write(trw.writer, record.Key)
-	if err != nil {
-		return err
-	}
-	err = tfrecord.Write(trw.writer, record.Value)
 	return err
 }
 

@@ -216,23 +216,13 @@ func NewTfRecordReader(reader bucket.ObjectReader) *SimpleRecordReader{
 func feedTfRecord(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		for {
-			key, err := tfrecord.Read(reader)
-			if err == io.EOF {
-				break
-			} else if err != nil {
-				log.Fatal(err)
-			}
 			value, err := tfrecord.Read(reader)
 			if err == io.EOF {
 				break
 			} else if err != nil {
 				log.Fatal(err)
 			}
-			keyb := make([]byte, len(key))
-			valueb := make([]byte, len(value))
-			copy(keyb, key)
-			copy(valueb, value)
-			preload <- &Record{Key: keyb, Value: valueb}
+			preload <- &Record{Key: make([]byte, 4), Value: value}
 		}
 		close(preload)
 	}()
@@ -282,7 +272,7 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 	// noway to instance directly by type name in Golang
 	var reader bucket.ObjectReader
 	var err error
-	if name == "bz2" || name == "stream" || name == "textstream" || name == "readAllBytes" || name == "tfrecord"{
+	if name == "bz2" || name == "stream" || name == "textstream" || name == "readAllBytes" || name == "tfrecord" {
 		reader, err = params["bucket"].(bucket.Bucket).OpenRead(params["filename"].(string))
 		if err != nil {
 			log.Errorf("Fail to open object %s: %v", params["filename"].(string), err)
