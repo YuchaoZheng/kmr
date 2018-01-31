@@ -55,7 +55,7 @@ func Output(key []byte, value []byte, ktype *string, vtype *string) {
 func main() {
 	fs := flag.NewFlagSet("kvrecord", flag.ExitOnError)
 	file := fs.String("f", "", "filename")
-	filetype := fs.String("filetype", "stream", "filetype: stream|leveldb\n")
+	filetype := fs.String("filetype", "stream", "filetype: stream|leveldb|tfrecord\n")
 	ktype := fs.String("keytype", "string", "keytype: string|uint32|uint64|-\n	- is for ignore")
 	vtype := fs.String("valuetype", "string", "valuetype: string|uint32|uint64|-\n	- is for ignore")
 	keyword := fs.String("keyword", "string", "keyword: string|-\n - is for ignore")
@@ -63,8 +63,17 @@ func main() {
 		log.Fatal("Parse cmd arguments err:", err)
 	}
 	switch *filetype {
-	case "stream":
-		rr := records.MakeRecordReader("file", map[string]interface{}{"filename": *file})
+	case "stream", "tfrecord":
+		osFile, err := os.Open(*file)
+		if err != nil {
+			log.Fatal(err)
+		}
+		var rr *records.SimpleRecordReader
+		if *filetype == "stream" {
+			rr = records.NewStreamRecordReader(osFile)
+		} else if *filetype == "tfrecord" {
+			rr = records.NewTfRecordReader(osFile)
+		}
 		for rr.HasNext() {
 			r := rr.Pop()
 			Output(r.Key, r.Value, ktype, vtype)
