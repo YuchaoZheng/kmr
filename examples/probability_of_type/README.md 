@@ -1,0 +1,13 @@
+## Build probability_of_type
+
+
+	deploy/deploy.sh examples/probability_of_type/main.go --no-global-config --jobname type-2048-actors-probability-calculation --config examples/probability_of_type/config.json --worker-num 30 --cpu-limit 2 --fresh-run --v
+    
+## modify probability_of_type
+
+	如果要增加type
+	修改 numberOfType的值
+	在typeName中加入对应的type
+	在inputFile中加入要计算的keyword文件位置
+	在hintWords中加入对应的hintword
+
