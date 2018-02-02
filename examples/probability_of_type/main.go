@@ -15,6 +15,7 @@ import (
 	"github.com/naturali/kmr/count"
 	"github.com/naturali/kmr/jobgraph"
 	"github.com/naturali/kmr/mapred"
+
 	"github.com/naturali/kmr-jobs/utils/input_file"
 )
 
@@ -89,33 +90,39 @@ func (*execMap) Map(key interface{}, value interface{},
 func (cwReduce *execReduce) Reduce(
 	key interface{}, valuesNext mapred.ValueIterator, output func(v interface{}), counter count.CountInterface) {
 	countHW := make(map[string]int64)
-	countTW := int64(0)
+	countTypeKeyword := int64(0)
 	for v, err := valuesNext.Next(); err == nil; v, err = valuesNext.Next() {
 		if v.(string) == " " {
-			countTW++
+			countTypeKeyword++
 		} else {
 			countHW[v.(string)]++
 		}
 	}
+	countSentence := counter.GetValue("<EOF>").(int64)
+	countHintwords := int64(0)
+	countHintKeywords := int64(0)
 	outputString := ""
-	hasHintwordsFlag := 0
-	for hintword, counthw := range countHW {
-		numHintWord := counter.GetValue(hintword).(int64)
-		numTotal := counter.GetValue("<EOF>").(int64)
-		probability1 := float64(counthw) / float64(countTW)
-		probability2 := probability1 / float64(numHintWord) * float64(numTotal)
-		logOfProbability := math.Log(probability2)
-		if hasHintwordsFlag == 1 {
-			outputString += string("\n" + key.(string) + "\t")
+	keySplit := strings.Split(key.(string), "\t")
+	for id, typename := range typeName {
+		if typename == keySplit[0] {
+			for _, hintword := range hintWords[id] {
+				counterHintword := counter.GetValue(hintword).(int64)
+				countHintwords += counterHintword
+				countHintKeywords += countHW[hintword]
+				outputString += hintword + "\t" + strconv.FormatInt(countHW[hintword], 10) + "\t" + counterHintword + "\t"
+			}
+			break
 		}
-		outputString += string(hintword + "\t" + strconv.FormatInt(counthw, 10) + "\t" + strconv.FormatInt(countTW, 10) + "\t" + strconv.FormatInt(numHintWord, 10) + "\t" +
-			strconv.FormatInt(numTotal, 10) + "\t" + strconv.FormatFloat(probability1, 'f', 6, 64) + "\t" + strconv.FormatFloat(probability2, 'f', 6, 64) + "\t" +
-			strconv.FormatFloat(logOfProbability, 'f', 6, 64))
-		hasHintwordsFlag = 1
 	}
-	if hasHintwordsFlag == 1 {
-		output(outputString)
+	if countHintKeywords == 0 {
+		countHintKeywords = 1
 	}
+	probability := float64(countHintKeywords)*float64(countSentence) / (float64(countTypeKeyword)*float64(countHintwords))
+	logOfProbability := math.Log(probability)
+	outputString += strconv.FormatInt(countHintKeywords, 10) + "\t" + strconv.FormatInt(countSentence, 10) + "\t" +
+			strconv.FormatInt(countTypeKeyword, 10) + "\t" + strconv.FormatInt(countHintwords, 10) + "\t" +
+			strconv.FormatFloat(probability, 'f', 6, 64) + "\t" + strconv.FormatFloat(logOfProbability, 'f', 6, 64)
+	output(outputString)
 }
 
 // It defines the map-reduce of word-count which is counting the number of each word show-ups in the corpus.
@@ -147,6 +154,7 @@ var acMachineBuildWords []string
 
 func buildAcMachine(inputFileName string, mul int) {
 	inputFile, inputError := os.Open(inputFileName)
+	defer inputFile.Close()
 	if inputError != nil {
 		fmt.Println(inputError)
 		return
@@ -181,7 +189,7 @@ func main() {
 	}
 	fmt.Println("PPPPPP", len(acMachineBuildWords))
 	acMachine.Build(acMachineBuildWords)
-	if false {
+	if true {
 		input = &jobgraph.InputFiles{
 			Files: []string{
 				"/mnt/cephfs/kmr/pgdedup-2t-2048/res-2.t",
