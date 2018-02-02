@@ -27,10 +27,6 @@ type execReduce struct {
 	mapred.ReducerCommon
 }
 
-type execCombine struct {
-	mapred.CombineCommon
-}
-
 var acMachine = aca.NewAhoCorasickMatcher()
 
 const numberOfType = 1
@@ -109,7 +105,8 @@ func (cwReduce *execReduce) Reduce(
 				counterHintword := counter.GetValue(hintword).(int64)
 				countHintwords += counterHintword
 				countHintKeywords += countHW[hintword]
-				outputString += hintword + "\t" + strconv.FormatInt(countHW[hintword], 10) + "\t" + counterHintword + "\t"
+				outputString += hintword + "\t" + strconv.FormatInt(countHW[hintword], 10) + "\t" +
+						strconv.FormatInt(counterHintword, 10) + "\t"
 			}
 			break
 		}
@@ -163,14 +160,14 @@ func buildAcMachine(inputFileName string, mul int) {
 
 	for {
 		inputString, readerError := inputReader.ReadString('\n')
-		if readerError == io.EOF {
-			break
-		}
 		inputString = strings.Trim(inputString, "\n")
 		name := strings.ToLower(inputString)
 		acMachineBuildWords = append(acMachineBuildWords, name)
 		keyWordsOriginalName[name] = inputString
 		keyWordsBinary[name] |= mul
+		if readerError == io.EOF {
+			break
+		}
 	}
 }
 
@@ -189,7 +186,7 @@ func main() {
 	}
 	fmt.Println("PPPPPP", len(acMachineBuildWords))
 	acMachine.Build(acMachineBuildWords)
-	if true {
+	if false {
 		input = &jobgraph.InputFiles{
 			Files: []string{
 				"/mnt/cephfs/kmr/pgdedup-2t-2048/res-2.t",
@@ -200,8 +197,8 @@ func main() {
 		input = input_file.PgDedupFullSet("stream")
 	}
 	var job jobgraph.Job
-	job.SetName("type-2048-actors-probability-calculation")
-	job.AddJobNode(input, "type-2048-actors-probability-calculation").
+	job.SetName("type-2048-actors-probability")
+	job.AddJobNode(input, "type-2048-actors-probability").
 		AddMapper(mapper, 1).
 		AddReducer(reducer, 1)
     cli.Run(&job)
