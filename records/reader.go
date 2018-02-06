@@ -220,8 +220,7 @@ func NewMongDBbRecordReader(filename string) *SimpleRecordReader {
 	var meaasgeQuery map[string]interface{}
 	json.Unmarshal([]byte(filename), &meaasgeQuery)
  	url, db, collect, queryCondition := meaasgeQuery["url"].(string), meaasgeQuery["database"].(string), meaasgeQuery["collection"].(string), meaasgeQuery["query"]
-
-	fmt.Println(url, db, collect, queryCondition)
+ 	
 	session, err := mgo.Dial(url)
 	if err != nil {
 		log.Fatal(err)
