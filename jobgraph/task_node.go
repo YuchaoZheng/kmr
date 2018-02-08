@@ -303,6 +303,7 @@ func (n *JobNode) AddFilter(filter mapred.Filter, batchSize int) *JobNode {
 	if n.startNode == nil {
 		fn.inputFiles = n.inputs
 		n.startNode = fn
+		n.graph.roots = append(n.graph.roots, n)
 	} else {
 		fn.inputFiles = n.endNode.GetOutputFiles()
 		fn.inputFiles.setBucketType(InterBucket)
