@@ -5,6 +5,7 @@ import (
 	"compress/bzip2"
 	"encoding/binary"
 	"fmt"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"os"
@@ -14,6 +15,8 @@ import (
 
 	"github.com/syndtr/goleveldb/leveldb"
 	"github.com/ryszard/tfutils/go/tfrecord"
+	"gopkg.in/mgo.v2"
+	"gopkg.in/mgo.v2/bson"
 )
 
 type RecordReader interface {
@@ -213,6 +216,41 @@ func NewTfRecordReader(reader bucket.ObjectReader) *SimpleRecordReader{
 	}
 }
 
+func NewMongDBbRecordReader(filename string) *SimpleRecordReader {
+	var meaasgeQuery map[string]interface{}
+	json.Unmarshal([]byte(filename), &meaasgeQuery)
+ 	url, db, collect, queryCondition := meaasgeQuery["url"].(string), meaasgeQuery["database"].(string), meaasgeQuery["collection"].(string), meaasgeQuery["query"]
+ 	
+	session, err := mgo.Dial(url)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	preload := make(chan *Record, 1000)
+
+	go func() {
+		collection := session.DB(db).C(collect)
+		result := bson.M{}
+		iter := collection.Find(queryCondition).Iter()
+
+		for iter.Next(&result) {
+			value, err := json.Marshal(result)
+			if err == io.EOF {
+				break
+			} else if err != nil {
+				log.Fatal(err)
+			}
+			preload <- &Record{Key: make([]byte, 4), Value: value}
+		}
+		close(preload)
+		session.Close()
+	} ()
+
+	return &SimpleRecordReader{
+		input: preload,
+	}
+}
+
 func feedTfRecord(preload chan<- *Record, reader io.Reader) {
 	go func() {
 		for {
@@ -300,6 +338,8 @@ func MakeRecordReader(name string, params map[string]interface{}) RecordReader {
 		return NewLevelDbRecordReader(filename)
 	case "tfrecord":
 		return NewTfRecordReader(reader)
+	case "mongodb":
+		return NewMongDBbRecordReader(params["filename"].(string))
 	default:
 		log.Debugf("Warning, ReaderType = \"%s\", you are using default reader(NewConsoleRecordReader).", name)
 		return NewConsoleRecordReader()
