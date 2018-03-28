@@ -141,7 +141,10 @@ func (m *Master) CheckHeartbeatForEachWorker(workerID int64, heartbeat chan hear
 		case <-timeout:
 			// the worker fuck up, release the task
 			log.Error("Worker: ", workerID, "fuck up")
-			m.scheduler.ReportTask(m.workerTaskMap[workerID], ResultFailed)
+			m.Lock()
+			taskMessage := m.workerTaskMap[workerID]
+			m.Unlock()
+			m.scheduler.ReportTask(taskMessage, ResultFailed)
 			// when timeout happens, nobody not do it for us
 			m.resetWorker(workerID)
 			return
