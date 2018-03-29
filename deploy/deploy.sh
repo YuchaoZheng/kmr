@@ -298,7 +298,7 @@ Flags:
         Check porint file
     --fresh-run
         Fresh run, ignore checkpoint.
-    --max-retries
+    --max-retries [NUM]
         If a task fails more than MAX-RETRIES, it\'ll be regarded as succeeded. <=0 mean unlimited,
         Default: 0
     --v
