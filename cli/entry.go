@@ -376,9 +376,9 @@ func Run(job *jobgraph.Job) {
 				}
 
 				if ctx.Bool("fresh-run") {
-					buckets[2].Delete(ctx.String("check-point"))
+					buckets[2].Delete(job.GetName() + "-" + ctx.String("check-point"))
 				}
-				ck, err := master.OpenCheckPoint(buckets[2], ctx.String("check-point"))
+				ck, err := master.OpenCheckPoint(buckets[2], job.GetName() + "-" + ctx.String("check-point"))
 				if err != nil {
 					ck = nil
 					log.Error(err)

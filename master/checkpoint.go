@@ -97,12 +97,11 @@ func OpenCheckPoint(bk bucket.Bucket, key string) (cp *CheckPoint, err error) {
 	}
 
 	go func() {
-		timer := time.NewTicker(10 * time.Second)
+		timer := time.NewTicker(60 * time.Second)
 		for {
 			<-timer.C
 			if cp.writeFlag {
 				writer, err := cp.bk.OpenWrite(cp.key)
-				defer writer.Close()
 				if err != nil {
 					log.Error(err)
 					continue
@@ -118,6 +117,7 @@ func OpenCheckPoint(bk bucket.Bucket, key string) (cp *CheckPoint, err error) {
 
 				_, err = writer.Write(res)
 				cp.writeFlag = false
+				writer.Close()
 			}
 		}
 	}()
