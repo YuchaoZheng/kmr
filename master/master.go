@@ -60,7 +60,7 @@ func (m *Master) TaskFailed(t TaskDescription) error {
 	if m.ck != nil {
 		state := m.ck.GetTaskState(t)
 		m.ck.IncreaseTaskFailureTime(t)
-		log.Info("Task", t,"has failed for", state.FailureTime, "times", "limit: ", m.maxFailureTime)
+		log.Info("Task", t,"has failed for", state.FailureTime+1, "times", "limit: ", m.maxFailureTime)
 	}
 	return nil
 }
