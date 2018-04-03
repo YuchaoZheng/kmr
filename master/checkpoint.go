@@ -55,9 +55,9 @@ func (c *CheckPoint) GetTaskState(desc TaskDescription) TaskState {
 	// don't care the ID
 	desc.ID = 0
 
-	_, ok := c.ckMap[fmt.Sprint(desc)]
+	s, ok := c.ckMap[fmt.Sprint(desc)]
 	if ok {
-		return TaskState{true, 0}
+		return s
 	} else {
 		return TaskState{false, 0}
 	}
