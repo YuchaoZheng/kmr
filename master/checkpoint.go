@@ -20,8 +20,8 @@ import (
 )
 
 type TaskState struct {
-	succeeded   bool
-	failureTime int
+	Succeed   bool
+	FailureTime int
 }
 
 type CheckPoint struct {
@@ -43,7 +43,7 @@ func (c *CheckPoint) SetTaskState(desc TaskDescription, state TaskState) {
 
 	c.ckMap[desc.mapKey()] = state
 
-	if state.succeeded {
+	if state.Succeed {
 		c.writeFlag = true
 	}
 	return
@@ -55,9 +55,9 @@ func (c *CheckPoint) GetTaskState(desc TaskDescription) TaskState {
 	// don't care the ID
 	desc.ID = 0
 
-	_, ok := c.ckMap[fmt.Sprint(desc)]
+	s, ok := c.ckMap[fmt.Sprint(desc)]
 	if ok {
-		return TaskState{true, 0}
+		return s
 	} else {
 		return TaskState{false, 0}
 	}
@@ -65,13 +65,13 @@ func (c *CheckPoint) GetTaskState(desc TaskDescription) TaskState {
 
 func (c *CheckPoint) IncreaseTaskFailureTime(desc TaskDescription) {
 	s := c.GetTaskState(desc)
-	s.failureTime++
+	s.FailureTime++
 	c.SetTaskState(desc, s)
 }
 
 func (c *CheckPoint) MarkTaskSucceeded(desc TaskDescription) {
 	s := c.GetTaskState(desc)
-	s.succeeded = true
+	s.Succeed = true
 	c.SetTaskState(desc, s)
 }
 
@@ -97,12 +97,11 @@ func OpenCheckPoint(bk bucket.Bucket, key string) (cp *CheckPoint, err error) {
 	}
 
 	go func() {
-		timer := time.NewTicker(10 * time.Second)
+		timer := time.NewTicker(60 * time.Second)
 		for {
 			<-timer.C
 			if cp.writeFlag {
 				writer, err := cp.bk.OpenWrite(cp.key)
-				defer writer.Close()
 				if err != nil {
 					log.Error(err)
 					continue
@@ -118,6 +117,7 @@ func OpenCheckPoint(bk bucket.Bucket, key string) (cp *CheckPoint, err error) {
 
 				_, err = writer.Write(res)
 				cp.writeFlag = false
+				writer.Close()
 			}
 		}
 	}()
