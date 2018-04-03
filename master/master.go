@@ -59,8 +59,8 @@ func (m *Master) TaskSucceeded(t TaskDescription) error {
 func (m *Master) TaskFailed(t TaskDescription) error {
 	if m.ck != nil {
 		state := m.ck.GetTaskState(t)
-		log.Info("Task", t,"has failed for", state.failureTime, "times", "limit: ", m.maxFailureTime)
 		m.ck.IncreaseTaskFailureTime(t)
+		log.Info("Task", t,"has failed for", state.FailureTime, "times", "limit: ", m.maxFailureTime)
 	}
 	return nil
 }
@@ -215,8 +215,8 @@ func (s *server) RequestTask(ctx context.Context, in *kmrpb.RegisterParams) (*km
 
 		if s.master.ck != nil {
 			state := s.master.ck.GetTaskState(t)
-			if state.succeeded || (s.master.maxFailureTime > 0 && state.failureTime > s.master.maxFailureTime) {
-				if state.succeeded {
+			if state.Succeed || (s.master.maxFailureTime > 0 && state.FailureTime > s.master.maxFailureTime) {
+				if state.Succeed {
 					log.Info("Job", t, "had been finished according to checkpoint")
 				} else {
 					log.Info("Job", t, "is finished because it has failed for more than",

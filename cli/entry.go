@@ -260,6 +260,7 @@ func Run(job *jobgraph.Job) {
 					"--remote", "--port", fmt.Sprint(ctx.Int("port")),
 					"--worker-num", fmt.Sprint(ctx.Int("worker-num")),
 					"--cpu-limit", fmt.Sprint(ctx.Int("cpu-limit")),
+					"--max-retries", fmt.Sprint(ctx.Int("max-retries")),
 					"--image-name", imageName,
 					"--service-name", job.GetName(),
 					"--check-point", ctx.String("check-point"),
