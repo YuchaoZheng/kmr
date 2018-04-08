@@ -364,7 +364,7 @@ func (e *MapReduceExecutor) runReducer(cw *ComputeWrapClass, node *jobgraph.MapR
 		//TODO: How to deal with backup Task ?
 		reader, err := e.w.interBucket.OpenRead(interFile)
 		if err != nil {
-			log.Errorf("Failed to open intermediate: %v", err)
+			log.Errorf("Failed to open intermediate %v: %v", interFiles, err)
 		} else {
 			recordReader := records.NewStreamRecordReader(reader)
 			readers = append(readers, recordReader)
