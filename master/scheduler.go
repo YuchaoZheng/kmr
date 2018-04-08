@@ -73,7 +73,7 @@ type task struct {
 type TaskNodeJob struct {
 	// Use this can get a unique TaskNode
 	taskNode   jobgraph.TaskNode
-	phaseTasks	[]map[*task]bool
+	phaseTasks []map[*task]bool
 }
 
 // createMapReduceTasks divide a TaskNode represented by a jobgraph.JobDescription into smallest executable task
@@ -89,7 +89,7 @@ func (s *Scheduler) createMapReduceTasks(desc jobgraph.JobDescription) (tnJob *T
 	for i := 0; i < taskNode.GetPhaseCount(); i++ {
 		ts := make(map[*task]bool)
 		num := taskNode.GetTaskCountOfPhase(i)
-		for idx:=0; idx<num; idx++ {
+		for idx := 0; idx < num; idx++ {
 			tmpTask := &task{
 				phase:          i,
 				job:            tnJob,
@@ -242,7 +242,7 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 					// do check
 					for i := 0; i < jobPhase; i++ {
 						if s.phaseFinishedCnt[t.job][i] != t.job.taskNode.GetTaskCountOfPhase(i) {
-							log.Fatal("Phase", i + 1, "start before mappers finished in TaskNode", t.job.taskNode.GetIndex())
+							log.Fatal("Phase", i+1, "start before mappers finished in TaskNode", t.job.taskNode.GetIndex())
 						}
 					}
 					if s.phaseFinishedCnt[t.job][jobPhase] >= t.job.taskNode.GetTaskCountOfPhase(jobPhase) {
