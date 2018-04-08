@@ -73,7 +73,7 @@ type task struct {
 type TaskNodeJob struct {
 	// Use this can get a unique TaskNode
 	taskNode   jobgraph.TaskNode
-	phaseTasks [][]*task
+	phaseTasks []map[*task]bool
 }
 
 // createMapReduceTasks divide a TaskNode represented by a jobgraph.JobDescription into smallest executable task
@@ -85,14 +85,17 @@ func (s *Scheduler) createMapReduceTasks(desc jobgraph.JobDescription) (tnJob *T
 		return
 	}
 	tnJob.taskNode = taskNode
+
 	for i := 0; i < taskNode.GetPhaseCount(); i++ {
-		ts := make([]*task, taskNode.GetTaskCountOfPhase(i))
-		for idx := range ts {
-			ts[idx] = &task{
+		ts := make(map[*task]bool)
+		num := taskNode.GetTaskCountOfPhase(i)
+		for idx := 0; idx < num; idx++ {
+			tmpTask := &task{
 				phase:          i,
 				job:            tnJob,
 				phaseTaskIndex: idx,
 			}
+			ts[tmpTask] = true
 		}
 		tnJob.phaseTasks = append(tnJob.phaseTasks, ts)
 	}
@@ -179,8 +182,7 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 					if jobPhase >= taskNode.GetPhaseCount() {
 						log.Fatal("After job node finished, this should not exist")
 					}
-					tasks := &processingJob.phaseTasks[jobPhase]
-					for _, task := range *tasks {
+					for task := range processingJob.phaseTasks[jobPhase] {
 						if _, ok := s.taskStateMap[task]; !ok {
 							s.taskStateMap[task] = StateIdle
 						}
@@ -236,10 +238,11 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 
 				if state == StateInProgress {
 					jobPhase := s.phaseMap[t.job]
+					delete(t.job.phaseTasks[jobPhase], t)
 					// do check
 					for i := 0; i < jobPhase; i++ {
 						if s.phaseFinishedCnt[t.job][i] != t.job.taskNode.GetTaskCountOfPhase(i) {
-							log.Fatal("Phase", i + 1, "start before mappers finished in TaskNode", t.job.taskNode.GetIndex())
+							log.Fatal("Phase", i+1, "start before mappers finished in TaskNode", t.job.taskNode.GetIndex())
 						}
 					}
 					if s.phaseFinishedCnt[t.job][jobPhase] >= t.job.taskNode.GetTaskCountOfPhase(jobPhase) {
