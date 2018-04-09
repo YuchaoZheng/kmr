@@ -143,7 +143,7 @@ func (node *MapReduceNode) GetPhaseCount() int {
 func (node *MapReduceNode) GetTaskCountOfPhase(phase int) int {
 	switch phase {
 	case MapPhase:
-		return (node.GetMapperNum() + node.GetMapperBatchSize() - 1) / node.GetMapperBatchSize()
+		return node.GetMapperNum()
 	case ReducePhase:
 		return node.GetReducerNum()
 	default:
