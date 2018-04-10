@@ -66,7 +66,7 @@ const (
 )
 
 const (
-	LeveldbFileType = "leveldb"
+	TextstreamFileType = "textstream"
 	StreamFileType = "stream"
 )
 

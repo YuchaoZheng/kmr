@@ -43,7 +43,7 @@ func (e *FilterExecutor) handleTaskNode(info kmrpb.TaskInfo, n jobgraph.TaskNode
 	readers := make([]records.RecordReader, 0)
 	for fidx := int(subIndex) * fNode.GetBatchSize(); fidx < len(inputFiles) && fidx < int(subIndex+1) * fNode.GetBatchSize(); fidx++ {
 		file := inputFiles[fidx]
-		log.Debug("Opening mapper input file", file)
+		log.Debug("Opening Filter input file", file)
 		recordReader := records.MakeRecordReader(fNode.GetInputFiles().GetFileType(), map[string]interface{}{
 			"filename": file,
 			"bucket": e.getBucket(fNode.GetInputFiles()),

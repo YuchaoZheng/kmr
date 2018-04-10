@@ -27,6 +27,7 @@ type TaskNode interface {
 	GetTaskCountOfPhase(phase int) int
 	ToJobDesc() *JobDescription
 }
+
 type TaskNodeBase struct {
 	index                   int
 	chainPrev, chainNext    TaskNode
@@ -311,7 +312,7 @@ func (n *JobNode) AddFilter(filter mapred.Filter, batchSize int) *JobNode {
 		n.endNode.setNext(fn)
 	}
 	n.graph.taskNodes = append(n.graph.taskNodes, fn)
-	fn.outputFiles = &fileNameGenerator{fn, len(fn.inputFiles.GetFiles()), ReduceBucket, StreamFileType}
+	fn.outputFiles = &fileNameGenerator{fn, (len(fn.inputFiles.GetFiles()) + batchSize - 1 )/batchSize, ReduceBucket, TextstreamFileType}
 	n.endNode = fn
 	return n
 }
