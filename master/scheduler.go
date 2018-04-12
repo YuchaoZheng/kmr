@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"container/list"
 
 	"github.com/naturali/kmr/jobgraph"
 	"github.com/naturali/kmr/util/log"
@@ -66,14 +67,14 @@ type Scheduler struct {
 type task struct {
 	phase          int
 	phaseTaskIndex int
-
-	job *TaskNodeJob
+	job            *TaskNodeJob
 }
 
 type TaskNodeJob struct {
 	// Use this can get a unique TaskNode
-	taskNode   jobgraph.TaskNode
-	phaseTasks []map[*task]bool
+	taskNode      jobgraph.TaskNode
+	phaseTasks    []*list.List
+	phaseTasksMap []map[*task]*list.Element
 }
 
 // createMapReduceTasks divide a TaskNode represented by a jobgraph.JobDescription into smallest executable task
@@ -87,7 +88,8 @@ func (s *Scheduler) createMapReduceTasks(desc jobgraph.JobDescription) (tnJob *T
 	tnJob.taskNode = taskNode
 
 	for i := 0; i < taskNode.GetPhaseCount(); i++ {
-		ts := make(map[*task]bool)
+		tsMap := make(map[*task]*list.Element)
+		ts := list.New()
 		num := taskNode.GetTaskCountOfPhase(i)
 		for idx := 0; idx < num; idx++ {
 			tmpTask := &task{
@@ -95,8 +97,10 @@ func (s *Scheduler) createMapReduceTasks(desc jobgraph.JobDescription) (tnJob *T
 				job:            tnJob,
 				phaseTaskIndex: idx,
 			}
-			ts[tmpTask] = true
+			ts.PushBack(tmpTask)
+			tsMap[tmpTask] = ts.Back()
 		}
+		tnJob.phaseTasksMap = append(tnJob.phaseTasksMap, tsMap)
 		tnJob.phaseTasks = append(tnJob.phaseTasks, ts)
 	}
 	return
@@ -182,7 +186,8 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 					if jobPhase >= taskNode.GetPhaseCount() {
 						log.Fatal("After job node finished, this should not exist")
 					}
-					for task := range processingJob.phaseTasks[jobPhase] {
+					for tmpTask := processingJob.phaseTasks[jobPhase].Front(); tmpTask != nil; tmpTask = tmpTask.Next() {
+						task := tmpTask.Value.(*task)
 						if _, ok := s.taskStateMap[task]; !ok {
 							s.taskStateMap[task] = StateIdle
 						}
@@ -238,7 +243,10 @@ func (s *Scheduler) StartSchedule(visitor EventHandler) error {
 
 				if state == StateInProgress {
 					jobPhase := s.phaseMap[t.job]
-					delete(t.job.phaseTasks[jobPhase], t)
+					t.job.phaseTasks[jobPhase].Remove(t.job.phaseTasksMap[jobPhase][t])
+					delete(t.job.phaseTasksMap[jobPhase], t)
+
+					delete(t.job.phaseTasksMap[jobPhase], t)
 					// do check
 					for i := 0; i < jobPhase; i++ {
 						if s.phaseFinishedCnt[t.job][i] != t.job.taskNode.GetTaskCountOfPhase(i) {
